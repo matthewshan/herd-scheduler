@@ -1,0 +1,49 @@
+# Canonical "anyone can run it" path (spec §4). `docker compose up` brings up
+# postgres:16, applies the placeholder migration, then starts the app.
+services:
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/scheduler
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-insecure-secret-change-me}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # One-shot migration. Uses the deps stage (full node_modules incl. the Prisma
+  # CLI) so `prisma migrate deploy` runs offline, then exits. Phase 8 folds this
+  # into a proper entrypoint.
+  migrate:
+    build:
+      context: .
+      target: deps
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/scheduler
+    command: pnpm exec prisma migrate deploy
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: scheduler
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata: {}

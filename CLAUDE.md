@@ -4,9 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repo is **pre-implementation**. There is no application code yet — only design and planning documents. The initial commit contains `LICENSE` plus `docs/`. The first coding task will be scaffolding the stack described in §3 of the tech spec.
+**Phase 1 (scaffold + container baseline) is done.** A Next.js App Router + TypeScript app is live at the repo root with Tailwind (plain, no design tokens yet), Prisma against Postgres, and Auth.js v5 Google sign-in (JWT sessions, no allowlist/adapter yet). The portable container path (`docker compose up`) is proven. Phases 2–8 build on this — see `docs/plans/phases/`.
 
-Do not assume any build, test, or run command exists until you've scaffolded the project (or confirmed scaffolding has been done since this file was written).
+Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.npmrc` sets `node-linker=hoisted` so the standalone build and Prisma engine resolve). Commands (run from repo root):
+
+- `pnpm install` — installs deps; `postinstall` runs `prisma generate`.
+- `pnpm dev` — local dev server at http://localhost:3000.
+- `pnpm build` — production standalone build (`output: 'standalone'`).
+- `pnpm start` — serve a production build.
+- `pnpm lint` — ESLint (`next lint`); `pnpm format` / `pnpm format:check` — Prettier.
+- `pnpm migrate:dev` — create + apply a dev migration (`prisma migrate dev`).
+- `pnpm migrate:deploy` — apply pending migrations (`prisma migrate deploy`).
+- `docker compose up` — Postgres + a one-shot `migrate` service + the app, the canonical portable path. Copy `.env.example` → `.env` first (real Google OAuth creds needed for sign-in).
+
+No automated test suite exists yet — add one when the first phase that warrants it lands.
+
+The current Prisma schema is a single `HealthCheck` placeholder model proving the DB wire; the full data model arrives in Phase 4 and replaces it.
 
 ## Authoritative documents
 
