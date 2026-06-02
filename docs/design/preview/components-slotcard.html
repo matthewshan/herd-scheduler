@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0}
+  body{background:var(--bg);padding:22px 28px;-webkit-font-smoothing:antialiased;display:flex;gap:18px;align-items:flex-start}
+  .card{flex:1;background:#fff;border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--sh-1);padding:14px 16px}
+  .card.best{border:2px solid var(--brand);box-shadow:var(--sh-2)}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .day{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--fg1)}
+  .time{font-family:var(--font-body);font-size:13px;color:var(--fg2);font-feature-settings:'tnum' 1;margin-top:1px}
+  .pill{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 11px;border-radius:999px;font-family:var(--font-body);font-weight:600;font-size:12px}
+  .best-pill{background:var(--brand);color:#fff}
+  .bar{display:flex;height:9px;border-radius:999px;overflow:hidden;background:var(--surface-2);margin:12px 0 9px}
+  .tally{display:flex;gap:12px;font-family:var(--font-body);font-weight:600;font-size:12px;font-feature-settings:'tnum' 1}
+  .dot{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:4px;vertical-align:middle}
+  .allgood{margin-top:10px;display:inline-flex;align-items:center;gap:5px;background:var(--yes-tint);color:var(--yes);font-family:var(--font-body);font-weight:600;font-size:12px;height:26px;padding:0 11px;border-radius:999px}
+</style>
+</head>
+<body>
+  <div class="card best">
+    <div class="top">
+      <div><div class="day">Sat, Jun 7</div><div class="time">6:00–9:00 PM</div></div>
+      <span class="pill best-pill">★ Best fit</span>
+    </div>
+    <div class="bar"><span style="width:83%;background:var(--yes)"></span><span style="width:17%;background:var(--maybe)"></span></div>
+    <div class="tally"><span style="color:var(--yes)"><span class="dot" style="background:var(--yes)"></span>5 Yes</span><span style="color:#B45309"><span class="dot" style="background:var(--maybe)"></span>1</span><span style="color:var(--no)"><span class="dot" style="background:var(--no)"></span>0</span></div>
+    <div><span class="allgood">✓ Works for everyone</span></div>
+  </div>
+  <div class="card">
+    <div class="top">
+      <div><div class="day">Fri, Jun 6</div><div class="time">7:00–10:00 PM</div></div>
+    </div>
+    <div class="bar"><span style="width:50%;background:var(--yes)"></span><span style="width:17%;background:var(--maybe)"></span><span style="width:33%;background:var(--no)"></span></div>
+    <div class="tally"><span style="color:var(--yes)"><span class="dot" style="background:var(--yes)"></span>3 Yes</span><span style="color:#B45309"><span class="dot" style="background:var(--maybe)"></span>1</span><span style="color:var(--no)"><span class="dot" style="background:var(--no)"></span>2</span></div>
+  </div>
+</body>
+</html>

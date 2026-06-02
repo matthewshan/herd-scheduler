@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface);padding:26px 28px;-webkit-font-smoothing:antialiased;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  button{font-family:var(--font-body);font-weight:600;font-size:15px;border-radius:var(--r-btn);border:0;padding:0 18px;height:46px;cursor:pointer}
+  .primary{background:var(--brand);color:#fff;box-shadow:var(--sh-brand)}
+  .primary.hover{background:var(--brand-hover)}
+  .ghost{background:var(--surface-2);color:var(--fg1)}
+  .outline{background:#fff;color:var(--brand);box-shadow:inset 0 0 0 1.5px var(--brand)}
+  .link{background:none;color:var(--brand);padding:0 4px;text-decoration:none}
+  .tag{position:absolute;margin-top:-56px;font-family:var(--font-body);font-size:11px;color:var(--fg3)}
+</style>
+</head>
+<body>
+  <button class="primary">Submit availability</button>
+  <button class="primary hover">Hover / pressed</button>
+  <button class="ghost">Cancel</button>
+  <button class="outline">Add another time</button>
+  <button class="link">Sign in with Google</button>
+</body>
+</html>

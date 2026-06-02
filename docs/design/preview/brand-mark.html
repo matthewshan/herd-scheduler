@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface);padding:24px 28px;-webkit-font-smoothing:antialiased;display:flex;align-items:center;gap:30px}
+  .tile{border-radius:20px;background:var(--brand);box-shadow:0 2px 8px rgba(0,119,182,.24);display:flex;align-items:center;justify-content:center;line-height:1}
+  .lg{width:76px;height:76px;font-size:42px;border-radius:22px}
+  .md{width:48px;height:48px;font-size:26px;border-radius:14px}
+  .sm{width:30px;height:30px;font-size:17px;border-radius:9px}
+  .lockup{display:flex;align-items:center;gap:12px;margin-left:6px}
+  .word{font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--fg1);letter-spacing:-.01em}
+  .note{margin-left:auto;font-family:var(--font-body);font-size:12px;color:var(--fg3);max-width:150px;text-align:right}
+</style>
+</head>
+<body>
+  <div class="tile lg">🐱</div>
+  <div class="tile md">🐱</div>
+  <div class="tile sm">🐱</div>
+  <div class="lockup">
+    <div class="tile md">🐱</div>
+    <span class="word">Herd Scheduler</span>
+  </div>
+  <div class="note">Cerulean squircle + 🐱 — "herding cats"</div>
+</body>
+</html>

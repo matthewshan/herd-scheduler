@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0}
+  body{background:var(--surface);padding:24px 28px;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;gap:14px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--surface-2);padding:5px;border-radius:var(--r-pill)}
+  .opt{height:42px;border-radius:var(--r-pill);display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--font-body);font-weight:600;font-size:14px;color:var(--fg2);background:transparent}
+  .opt.yes{background:var(--yes-tint);color:var(--yes)}
+  .opt.maybe{background:var(--maybe-tint);color:#B45309}
+  .opt.no{background:var(--no-tint);color:var(--no)}
+  .cap{font-family:var(--font-body);font-size:12px;color:var(--fg3);margin-bottom:-6px}
+</style>
+</head>
+<body>
+  <div class="cap">Unselected (default)</div>
+  <div class="seg"><div class="opt">Yes</div><div class="opt">If-need-be</div><div class="opt">No</div></div>
+  <div class="cap">Yes selected</div>
+  <div class="seg"><div class="opt yes">✓ Yes</div><div class="opt">If-need-be</div><div class="opt">No</div></div>
+  <div class="cap">If-need-be selected</div>
+  <div class="seg"><div class="opt">Yes</div><div class="opt maybe">✓ If-need-be</div><div class="opt">No</div></div>
+</body>
+</html>
