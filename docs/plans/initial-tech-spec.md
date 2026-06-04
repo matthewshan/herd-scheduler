@@ -86,7 +86,11 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 Multi-stage Dockerfile: install deps → `next build` (standalone) → copy the standalone server into a slim runtime image, run as non-root. Small image, no build tooling shipped to production.
 
 ### Reference deployment A — any container runtime + Postgres
-A `docker-compose.yml` (app + `postgres`) is the canonical "anyone can run it" path:
+The portable unit is the **image** built from the `Dockerfile` (`docker build`) — it runs on any
+container runtime against any `DATABASE_URL`. The repo's committed `docker-compose.yml` is
+**dev-only** and starts just a local Postgres (the app runs on the host via `pnpm dev`). The
+snippet below illustrates how you'd wire that same image to a Postgres in a compose-style
+production deployment:
 ```yaml
 services:
   app:
@@ -236,4 +240,4 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 1. **Email provider** when notifications land in Phase 2 — Resend, SES, SMTP?
 2. **Mutability of the anonymity setting** after votes already exist. Default proposal: lock it once any vote is cast (otherwise it would retroactively reveal or hide identities a voter assumed were private/public when they responded).
 
-*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo.
+*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo.

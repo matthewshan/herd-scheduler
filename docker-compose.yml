@@ -1,44 +1,18 @@
-# Canonical "anyone can run it" path (spec §4). `docker compose up` brings up
-# postgres:16, applies the placeholder migration, then starts the app.
+# Local dev database only. `docker compose up` starts Postgres on the default
+# port 5432 in the foreground — Ctrl+C stops it, so nothing is left running in
+# the background. Data persists in the `pgdata` volume across restarts.
+#
+# The app itself runs on the host (`pnpm dev`). Production portability is proven
+# by the Dockerfile (`docker build`), not this file — see the tech spec §4.
 services:
-  app:
-    build: .
-    environment:
-      DATABASE_URL: postgres://app:app@db:5432/scheduler
-      AUTH_SECRET: ${AUTH_SECRET:-dev-only-insecure-secret-change-me}
-      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
-      # Self-hosted: trust the AUTH_URL origin when validating OAuth callbacks.
-      AUTH_TRUST_HOST: ${AUTH_TRUST_HOST:-true}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      OWNER_EMAIL: ${OWNER_EMAIL:-}
-      APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
-    ports:
-      - "3000:3000"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  # One-shot migration. Uses the deps stage (full node_modules incl. the Prisma
-  # CLI) so `prisma migrate deploy` runs offline, then exits. Phase 8 folds this
-  # into a proper entrypoint.
-  migrate:
-    build:
-      context: .
-      target: deps
-    environment:
-      DATABASE_URL: postgres://app:app@db:5432/scheduler
-    command: pnpm exec prisma migrate deploy
-    depends_on:
-      db:
-        condition: service_healthy
-
   db:
     image: postgres:16
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
       POSTGRES_DB: scheduler
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

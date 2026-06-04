@@ -1,13 +1,6 @@
-# go-task tasks for herd-scheduler. Install: https://taskfile.dev/installation/
-# Run `task` (or `task --list`) to see available tasks.
-#
-# The `validate:phase-1` task walks the Phase 1 acceptance criteria
-# (docs/plans/phases/phase-1-scaffold.md). The Google OAuth round-trip (AC 4)
-# is interactive and not scripted here — see README.md "Verify sign-in".
+# go-task tasks for herd-scheduler (optional convenience wrappers).
+# Install: https://taskfile.dev/installation/ · run `task` to list them.
 version: "3"
-
-vars:
-  APP_URL: '{{.APP_URL | default "http://localhost:3000"}}'
 
 tasks:
   default:
@@ -16,99 +9,27 @@ tasks:
       - task --list
     silent: true
 
-  # ---- Phase 1 validation -------------------------------------------------
-
-  validate:phase-1:
-    desc: "Run the scripted Phase 1 acceptance checks (AC 1,2,3,5)"
+  db:
+    desc: "Start the local dev Postgres (foreground; Ctrl+C to stop)"
     cmds:
-      - task: lint
-      - task: build
-      - task: compose:up
-      - task: check:robots
-      - task: check:db
-      - cmd: echo "✅ Phase 1 scripted checks passed. AC 4 (Google sign-in) is manual — see README."
-        silent: true
+      - docker compose up
 
-  lint:
-    desc: "Lint + format check (AC 1 hygiene)"
-    cmds:
-      - pnpm lint
-      - pnpm format:check
-
-  build:
-    desc: "Production standalone build, then assert the artifact exists (AC 2)"
-    cmds:
-      - pnpm build
-      - test -d .next/standalone || (echo "✗ .next/standalone missing — standalone build did not run" && exit 1)
-      - 'echo "✓ AC 2: .next/standalone produced"'
-
-  compose:up:
-    desc: "Bring up db + migrate + app via docker compose and wait for the app (AC 3)"
-    cmds:
-      - docker compose up -d --build
-      - |
-        echo "Waiting for {{.APP_URL}} to respond..."
-        for i in $(seq 1 30); do
-          if curl -sf -o /dev/null "{{.APP_URL}}"; then
-            echo "✓ app is up"
-            exit 0
-          fi
-          sleep 2
-        done
-        echo "✗ app did not become reachable within 60s"
-        docker compose logs --tail=50
-        exit 1
-
-  compose:down:
-    desc: "Tear down the compose stack (keeps the pgdata volume)"
+  db:down:
+    desc: "Stop and remove the dev Postgres container (keeps the data volume)"
     cmds:
       - docker compose down
 
-  compose:clean:
-    desc: "Tear down the compose stack AND drop the pgdata volume"
+  db:reset:
+    desc: "Tear down the dev Postgres AND drop its data volume"
     cmds:
       - docker compose down -v
 
-  check:robots:
-    desc: "Assert X-Robots-Tag: noindex on every response (AC 5)"
-    cmds:
-      - |
-        if ! curl -sf -o /dev/null "{{.APP_URL}}"; then
-          echo "✗ app not reachable at {{.APP_URL}} — is it running? (task compose:up / task dev)"
-          exit 1
-        fi
-        header=$(curl -sI "{{.APP_URL}}" | tr -d '\r' | grep -i '^x-robots-tag:' || true)
-        if echo "$header" | grep -qi 'noindex'; then
-          echo "✓ AC 5: $header"
-        else
-          echo "✗ AC 5: X-Robots-Tag noindex header missing"
-          exit 1
-        fi
-
-  check:db:
-    desc: "Assert the home page reports the DB as connected (AC 3 wire)"
-    cmds:
-      - |
-        if ! curl -sf -o /dev/null "{{.APP_URL}}"; then
-          echo "✗ app not reachable at {{.APP_URL}} — is it running? (task compose:up / task dev)"
-          exit 1
-        fi
-        body=$(curl -sf "{{.APP_URL}}" || true)
-        if echo "$body" | grep -qi 'connected'; then
-          echo "✓ AC 3: home page reports Database: connected"
-        else
-          echo "✗ AC 3: DB not reported connected — check 'docker compose logs migrate db'"
-          exit 1
-        fi
-
-  # ---- convenience --------------------------------------------------------
-
   dev:
-    desc: "Run the local dev server"
+    desc: "Run the Next.js dev server (needs `task db` running)"
     cmds:
       - pnpm dev
 
-  migrate:dev:
+  migrate:
     desc: "Create + apply a dev migration against DATABASE_URL"
     cmds:
       - pnpm migrate:dev
