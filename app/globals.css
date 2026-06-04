@@ -9,7 +9,8 @@
    Fonts are self-hosted via next/font (see app/layout.tsx) — no CDN.
    ============================================================ */
 
-:root {
+:root,
+[data-theme="light"] {
   /* ---- Brand & neutrals ---------------------------------- */
   --bg: #f7f8fa; /* cool off-white app canvas      */
   --surface: #ffffff; /* cards, sheets                  */
@@ -109,8 +110,10 @@
    Source of truth is the [data-theme="dark"] attribute (set on <html> by the
    no-flash script + theme toggle). The @media block lets the page follow the
    OS when no explicit theme is chosen.
+   Targeting any [data-theme="dark"] element (not only :root) lets a subtree be
+   force-themed — used by the component gallery to show light + dark together.
    ============================================================ */
-:root[data-theme="dark"] {
+[data-theme="dark"] {
   --bg: #0e1116;
   --surface: #171b22;
   --surface-2: #20262f;
