@@ -8,7 +8,7 @@ everything it needs without reading the others end-to-end.
 
 | # | Phase | Goal | Depends on | Done |
 |---|-------|------|-----------|------|
-| 1 | [Scaffold + container baseline](phase-1-scaffold.md) | Running Next.js app + proven `docker compose up` | — | ☐ |
+| 1 | [Scaffold + container baseline](phase-1-scaffold.md) | Running Next.js app + proven `docker compose up` | — | ☑ |
 | 2 | [Design tokens, theming, fonts & icons](phase-2-design-tokens.md) | Tokens in Tailwind + working light/dark theme | 1 | ☐ |
 | 3 | [Design-system kit components](phase-3-kit-components.md) | Production components matching the prototype | 2 | ☐ |
 | 4 | [Data model + auth & access control](phase-4-data-auth.md) | Full schema + three-tier access working | 1 | ☐ |

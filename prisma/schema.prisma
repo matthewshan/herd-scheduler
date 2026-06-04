@@ -1,0 +1,21 @@
+// Phase 1 placeholder schema. The full data model (User, AllowedCreator, Poll,
+// TimeOption, Participant, Availability) lands in Phase 4 — HealthCheck exists
+// only to prove the DATABASE_URL wire end-to-end with a real migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // DIRECT_URL (env, optional) is only needed when DATABASE_URL points at a
+  // connection pooler — the Vercel + Supabase reference setup (spec §4). It is
+  // wired into `directUrl` in the deploy phase so the default container path
+  // (a single direct DATABASE_URL) works without requiring the var to be set.
+}
+
+model HealthCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}
