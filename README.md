@@ -17,15 +17,16 @@ it locally or in a container.
 ```bash
 cp .env.example .env        # then fill it in — see the two setup guides below
 pnpm install                # installs deps; runs `prisma generate`
-pnpm migrate:dev            # applies migrations to your DATABASE_URL
+docker compose up           # local dev Postgres on :5432 (Ctrl+C to stop)
+pnpm migrate:dev            # in another shell: applies migrations
 pnpm dev                    # http://localhost:3000
 ```
 
-Or run the whole thing in containers (Postgres + migrate + app), no local Node needed:
-
-```bash
-docker compose up           # http://localhost:3000
-```
+`docker compose up` runs **only a local Postgres** (default port 5432, data kept in a
+named volume) in the foreground — Ctrl+C stops it, nothing lingers in the background. The app
+runs on the host via `pnpm dev`. You can point `DATABASE_URL` at any other Postgres instead and
+skip compose entirely. Production portability is proven by the [`Dockerfile`](Dockerfile)
+(`docker build`), not compose — see [tech spec §4](docs/plans/initial-tech-spec.md).
 
 You need two external things set up before sign-in works: a **Google OAuth client** and a
 **PostgreSQL database**. Both are one-time, few-minute tasks — guides below.
@@ -38,11 +39,11 @@ Copy `.env.example` → `.env` and fill these in (every variable is from tech sp
 
 | Variable | Required | What it is |
 |----------|----------|------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string. Local compose uses `postgres://app:app@db:5432/scheduler`. |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string. Local dev (the compose Postgres) uses `postgres://app:app@localhost:5432/scheduler`. |
 | `DIRECT_URL` | pooler-only | Direct (non-pooled) URL for migrations when `DATABASE_URL` points at a pooler. See [Supabase](#database-setup-supabase). |
 | `AUTH_SECRET` | ✅ | Session signing secret. Generate with `openssl rand -base64 32`. |
 | `AUTH_URL` | ✅ | Public base URL of the deployment. Must match a Google redirect URI. Local: `http://localhost:3000`. |
-| `AUTH_TRUST_HOST` | self-hosted | Set `true` on any non-Vercel deployment so Auth.js validates OAuth callbacks against `AUTH_URL`'s origin. Without it, Google sign-in fails with a missing `iss` error. The compose path defaults it to `true`. |
+| `AUTH_TRUST_HOST` | self-hosted | Set `true` on any non-Vercel deployment so Auth.js validates OAuth callbacks against `AUTH_URL`'s origin. Without it, Google sign-in fails with a missing `iss` error. `.env.example` sets it to `true`. |
 | `GOOGLE_CLIENT_ID` | ✅ | From the Google OAuth client. See [Google OAuth](#google-oauth-setup). |
 | `GOOGLE_CLIENT_SECRET` | ✅ | From the Google OAuth client. |
 | `OWNER_EMAIL` | Phase 4 | Bootstrap admin/allowlist owner (seeded on first boot, later phase). |
@@ -82,8 +83,8 @@ Google app verification is needed for personal/internal use. Takes about five mi
 
 ### Verify sign-in
 
-Start the app (`pnpm dev` or `docker compose up`), open `http://localhost:3000`, and click
-**Continue with Google**. A successful round-trip returns to the home page showing
+Start the app (`pnpm dev`, with the compose Postgres running), open `http://localhost:3000`,
+and click **Continue with Google**. A successful round-trip returns to the home page showing
 "Signed in as …". (This is Phase 1 acceptance criterion 4, and is the one check that isn't
 scriptable — it needs a human at the consent screen.)
 
@@ -121,27 +122,23 @@ provision this; it's a couple of clicks.)
 
 ---
 
-## Validating Phase 1
+## Task shortcuts
 
-A [`Taskfile.yml`](Taskfile.yml) wraps the scripted Phase 1 acceptance checks. With
+An optional [`Taskfile.yml`](Taskfile.yml) wraps the common commands. With
 [go-task](https://taskfile.dev/installation/) installed:
 
 ```bash
-task validate:phase-1      # lint, build, docker compose up, robots header, DB-connected
-task --list                # see all tasks
+task db        # start the dev Postgres (foreground)
+task migrate   # create + apply a dev migration
+task dev       # run the Next.js dev server
+task --list    # see all tasks
 ```
 
-This covers acceptance criteria 1, 2, 3, and 5. Criterion 4 (the Google sign-in round-trip) is
-manual — see [Verify sign-in](#verify-sign-in) above. The full criteria live in
-[`docs/plans/phases/phase-1-scaffold.md`](docs/plans/phases/phase-1-scaffold.md).
-
-Without go-task, the equivalent steps are:
+To produce and check the portable production build directly:
 
 ```bash
-pnpm build && test -d .next/standalone            # AC 2
-docker compose up -d --build                       # AC 3
-curl -sI http://localhost:3000 | grep -i x-robots  # AC 5
-curl -s  http://localhost:3000 | grep -i connected # AC 3 (DB wire)
+pnpm build && test -d .next/standalone   # standalone server artifact
+docker build -t herd-scheduler .         # the self-contained image
 ```
 
 ---

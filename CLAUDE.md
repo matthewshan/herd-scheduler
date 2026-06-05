@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phase 1 (scaffold + container baseline) is done.** A Next.js App Router + TypeScript app is live at the repo root with Tailwind (plain, no design tokens yet), Prisma against Postgres, and Auth.js v5 Google sign-in (JWT sessions, no allowlist/adapter yet). The portable container path (`docker compose up`) is proven. Phases 2–8 build on this — see `docs/plans/phases/`.
+**Phases 1–2 are done.** A Next.js App Router + TypeScript app is live at the repo root with Prisma against Postgres and Auth.js v5 Google sign-in (JWT sessions, no allowlist/adapter yet). The portable production image is proven by the `Dockerfile` (`docker build`); `docker compose` is dev-only and runs just a local Postgres. **Phase 2** plumbed the full design-token set from `docs/design/colors_and_type.css` into Tailwind `theme.extend` + CSS variables (`app/globals.css`), wired self-hosted fonts (Space Grotesk via `next/font/local`, Inter via `next/font/google`) and `lucide-react`, and shipped the `data-theme` light/dark mechanism (no-flash inline script + `lib/theme.ts` + `localStorage` `herd-theme`). Token specimen page: `/dev/tokens`. Phases 3–8 build on this — see `docs/plans/phases/`.
 
 Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.npmrc` sets `node-linker=hoisted` so the standalone build and Prisma engine resolve). Commands (run from repo root):
 
@@ -15,7 +15,8 @@ Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.np
 - `pnpm lint` — ESLint (`next lint`); `pnpm format` / `pnpm format:check` — Prettier.
 - `pnpm migrate:dev` — create + apply a dev migration (`prisma migrate dev`).
 - `pnpm migrate:deploy` — apply pending migrations (`prisma migrate deploy`).
-- `docker compose up` — Postgres + a one-shot `migrate` service + the app, the canonical portable path. Copy `.env.example` → `.env` first (real Google OAuth creds needed for sign-in).
+- `docker compose up` — a **local dev Postgres only** (default port 5432, persistent `pgdata` volume), foreground so nothing lingers. The app runs on the host via `pnpm dev`. Copy `.env.example` → `.env` first (real Google OAuth creds needed for sign-in).
+- `docker build -t herd-scheduler .` — the self-contained production image (the portability constraint), runnable on any container runtime against any `DATABASE_URL`.
 
 No automated test suite exists yet — add one when the first phase that warrants it lands.
 
@@ -49,6 +50,7 @@ Per `docs/plans/initial-tech-spec.md` §3 — the next scaffolding step lands th
 - **Per-poll anonymity flag** (`anonymousVoting` on `Poll`) gates whether the Results API returns per-voter rows or aggregate counts only. Default visible. When `true`, never leak voter identity to any viewer.
 - **Slug format:** `kebab(title) + "-" + nanoid(5)` (e.g. `game-night-x9f2`). Unique constraint; retry on collision.
 - **Voice:** sentence case everywhere, peer-to-peer, address user as "you", refer to the host by first name. The design bundle's README has the full content guide.
+- **TypeScript conventions:** follow `docs/typescript-standards.md` — notably, component props are declared as named `interface`s (never inline object-type literals), `type` is reserved for unions/aliases, and native-element wrappers extend the matching `*HTMLAttributes` type.
 
 ## Working with the tech spec
 
