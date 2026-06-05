@@ -45,13 +45,12 @@ const PEOPLE: { name: string; color: string }[] = [
 
 const TZ_LABEL = "Times shown in Eastern Time · ET";
 
-function Section({
-  title,
-  children,
-}: {
+interface SectionProps {
   title: string;
   children: React.ReactNode;
-}) {
+}
+
+function Section({ title, children }: SectionProps) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="font-body text-[12px] font-semibold uppercase tracking-[0.05em] text-fg3">
@@ -62,9 +61,15 @@ function Section({
   );
 }
 
+interface ShowcaseProps {
+  /** Namespaces field ids so the two instances don't collide in the DOM. */
+  idPrefix: string;
+}
+
 // One full pass of every component in its states. Rendered twice (light + dark)
 // by the page; each instance owns its own interactive state.
-function Showcase() {
+function Showcase({ idPrefix }: ShowcaseProps) {
+  const fid = (name: string) => `${idPrefix}-${name}`;
   const [vote, setVote] = useState<VoteValue | null>("yes");
   const [cal, setCal] = useState({ year: 2026, month: 5 }); // June 2026
   const [picked, setPicked] = useState<Set<string>>(
@@ -107,14 +112,18 @@ function Showcase() {
       </Section>
 
       <Section title="Inputs">
-        <Field label="Poll title" htmlFor="g-title">
-          <Input id="g-title" placeholder="e.g. Game night" defaultValue="Game Night 🎲" />
+        <Field label="Poll title" htmlFor={fid("title")}>
+          <Input
+            id={fid("title")}
+            placeholder="e.g. Game night"
+            defaultValue="Game Night 🎲"
+          />
         </Field>
-        <Field label="Location" htmlFor="g-loc" optional>
-          <Input id="g-loc" placeholder="Where?" />
+        <Field label="Location" htmlFor={fid("loc")} optional>
+          <Input id={fid("loc")} placeholder="Where?" />
         </Field>
-        <Field label="Timezone" htmlFor="g-tz">
-          <Select id="g-tz" defaultValue="ET">
+        <Field label="Timezone" htmlFor={fid("tz")}>
+          <Select id={fid("tz")} defaultValue="ET">
             <option value="ET">Eastern Time · ET</option>
             <option value="CT">Central Time · CT</option>
             <option value="MT">Mountain Time · MT</option>
@@ -122,11 +131,23 @@ function Showcase() {
             <option value="GMT">GMT</option>
           </Select>
         </Field>
-        <Field label="Note" htmlFor="g-note" optional>
-          <Textarea id="g-note" placeholder="Anything people should know?" />
+        <Field label="Note" htmlFor={fid("note")} optional>
+          <Textarea
+            id={fid("note")}
+            placeholder="Anything people should know?"
+          />
         </Field>
-        <Field label="Your name" htmlFor="g-name" error="Enter your name so people know who voted.">
-          <Input id="g-name" error defaultValue="" placeholder="Your name" />
+        <Field
+          label="Your name"
+          htmlFor={fid("name")}
+          error="Enter your name so people know who voted."
+        >
+          <Input
+            id={fid("name")}
+            error
+            defaultValue=""
+            placeholder="Your name"
+          />
         </Field>
       </Section>
 
@@ -175,9 +196,7 @@ function Showcase() {
         <SlotCard
           day="Fri, Jun 6"
           time="7:00–10:00 PM"
-          badge={
-            <Pill variant="all">Works for everyone</Pill>
-          }
+          badge={<Pill variant="all">Works for everyone</Pill>}
         >
           <div className="mt-3">
             <StackedBar y={3} m={1} n={2} />
@@ -342,13 +361,13 @@ export default function GalleryPage() {
             data-theme="light"
             className="flex justify-center rounded-card border border-border bg-bg"
           >
-            <Showcase />
+            <Showcase idPrefix="light" />
           </div>
           <div
             data-theme="dark"
             className="flex justify-center rounded-card border border-border bg-bg"
           >
-            <Showcase />
+            <Showcase idPrefix="dark" />
           </div>
         </div>
       </div>

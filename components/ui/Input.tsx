@@ -18,16 +18,14 @@ const fieldClass = (err?: boolean) =>
       : "border-border-strong focus:border-brand focus:shadow-[0_0_0_3px_rgba(0,119,182,0.18)]",
   ].join(" ");
 
-export function Label({
-  htmlFor,
-  optional,
-  children,
-}: {
+export interface LabelProps {
   htmlFor?: string;
   /** Appends a muted "(optional)" hint. */
   optional?: boolean;
   children: ReactNode;
-}) {
+}
+
+export function Label({ htmlFor, optional, children }: LabelProps) {
   return (
     <label
       htmlFor={htmlFor}
@@ -39,7 +37,11 @@ export function Label({
   );
 }
 
-export function FieldError({ children }: { children: ReactNode }) {
+export interface FieldErrorProps {
+  children: ReactNode;
+}
+
+export function FieldError({ children }: FieldErrorProps) {
   return (
     <p className="mt-1.5 flex items-center gap-[5px] font-body text-[12.5px] text-no">
       <CircleAlert size={14} />
@@ -65,8 +67,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   );
 });
 
-export interface TextareaProps
-  extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: boolean;
 }
 
@@ -83,6 +84,14 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   },
 );
 
+export interface FieldProps {
+  label: string;
+  htmlFor?: string;
+  optional?: boolean;
+  error?: string;
+  children: ReactNode;
+}
+
 // Convenience wrapper: label + control + optional error in one field group.
 export function Field({
   label,
@@ -90,13 +99,7 @@ export function Field({
   optional,
   error,
   children,
-}: {
-  label: string;
-  htmlFor?: string;
-  optional?: boolean;
-  error?: string;
-  children: ReactNode;
-}) {
+}: FieldProps) {
   return (
     <div className="mb-4">
       <Label htmlFor={htmlFor} optional={optional}>

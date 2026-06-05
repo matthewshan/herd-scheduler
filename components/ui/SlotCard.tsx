@@ -40,7 +40,9 @@ export function SlotCard({
           <div className="font-display text-[16px] font-bold text-fg1">
             {day}
           </div>
-          <div className="tnum mt-px font-body text-[13px] text-fg2">{time}</div>
+          <div className="tnum mt-px font-body text-[13px] text-fg2">
+            {time}
+          </div>
         </div>
         {badge}
       </div>

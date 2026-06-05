@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   WEEKDAYS,
+  addMonths,
   buildMonthGrid,
   dayId,
   monthLabel,
@@ -52,8 +53,8 @@ export function MiniCalendar({
   const nextDisabled = max ? cmp(here, max) >= 0 : false;
 
   const go = (delta: number) => {
-    const idx = year * 12 + month + delta;
-    onNavigate(Math.floor(idx / 12), ((idx % 12) + 12) % 12);
+    const next = addMonths(year, month, delta);
+    onNavigate(next.year, next.month);
   };
 
   const navBtn =

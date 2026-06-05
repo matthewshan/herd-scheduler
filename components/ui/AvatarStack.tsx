@@ -17,7 +17,7 @@ export function AvatarStack({ names, size = 28, max = 4 }: AvatarStackProps) {
     <div className="flex items-center">
       {shown.map((n, i) => (
         <Avatar
-          key={n}
+          key={`${n}-${i}`}
           name={n}
           size={size}
           className={`ring-2 ring-surface ${i === 0 ? "" : "-ml-2"}`}
@@ -27,8 +27,10 @@ export function AvatarStack({ names, size = 28, max = 4 }: AvatarStackProps) {
         <div
           className="-ml-2 flex flex-shrink-0 items-center justify-center rounded-full bg-surface-2 font-body text-[12px] font-semibold text-fg2 ring-2 ring-surface"
           style={{ width: size, height: size }}
+          role="img"
+          aria-label={`${extra} more`}
         >
-          +{extra}
+          <span aria-hidden="true">+{extra}</span>
         </div>
       )}
     </div>

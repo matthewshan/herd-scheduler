@@ -1,6 +1,10 @@
 import type { TallyCounts } from "./StackedBar";
 
-function Dot({ color }: { color: string }) {
+interface DotProps {
+  color: string;
+}
+
+function Dot({ color }: DotProps) {
   return (
     <span
       className="inline-block h-2 w-2 rounded-full"
