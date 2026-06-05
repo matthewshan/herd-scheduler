@@ -10,8 +10,8 @@ everything it needs without reading the others end-to-end.
 |---|-------|------|-----------|------|
 | 1 | [Scaffold + container baseline](phase-1-scaffold.md) | Running Next.js app + proven `docker compose up` | — | ☑ |
 | 2 | [Design tokens, theming, fonts & icons](phase-2-design-tokens.md) | Tokens in Tailwind + working light/dark theme | 1 | ☑ |
-| 3 | [Design-system kit components](phase-3-kit-components.md) | Production components matching the prototype | 2 | ☐ |
-| 4 | [Data model + auth & access control](phase-4-data-auth.md) | Full schema + three-tier access working | 1 | ☐ |
+| 3 | [Design-system kit components](phase-3-kit-components.md) | Production components matching the prototype | 2 | ☑ |
+| 4 | [Data model + auth & access control](phase-4-data-auth.md) | Full schema + access model (optional allowlist, blocklist, audit log) working | 1 | ☑ |
 | 5 | [Create poll + share flow](phase-5-create-share.md) | Host builds and publishes a poll | 3, 4 | ☐ |
 | 6 | [Vote flow (guest + inline sign-in)](phase-6-vote-flow.md) | Anyone with the link can mark availability | 3, 4 | ☐ |
 | 7 | [Results + finalize](phase-7-results-finalize.md) | Best-fit results + manual finalize, anonymity-correct | 5, 6 | ☐ |

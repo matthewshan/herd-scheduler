@@ -1,6 +1,7 @@
-// Phase 1 placeholder schema. The full data model (User, AllowedCreator, Poll,
-// TimeOption, Participant, Availability) lands in Phase 4 — HealthCheck exists
-// only to prove the DATABASE_URL wire end-to-end with a real migration.
+// Full data model (spec §6, Phase 4). Replaces the Phase 1 HealthCheck probe.
+// Auth.js (User/Account/Session/VerificationToken) + access control
+// (AllowedCreator/BlockedEmail/AuditLog) + the poll domain (Poll/TimeOption/
+// Participant/Availability).
 
 generator client {
   provider = "prisma-client-js"
@@ -15,7 +16,194 @@ datasource db {
   // (a single direct DATABASE_URL) works without requiring the var to be set.
 }
 
-model HealthCheck {
+// ---------------------------------------------------------------------------
+// Auth.js (database session strategy via @auth/prisma-adapter)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  // Admin flag. Bootstrapped from OWNER_EMAIL (seed + sign-in event); the owner
+  // manages the allowlist, blocklist, and audit log.
+  isOwner       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  accounts     Account[]
+  sessions     Session[]
+  createdPolls Poll[]        @relation("PollCreator")
+  participns   Participant[]
+  auditLogs    AuditLog[]    @relation("AuditActor")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Access control (spec §5)
+// ---------------------------------------------------------------------------
+
+// When ALLOWLIST_ENABLED=true, only these emails (plus the owner) may create
+// polls. Ignored when ALLOWLIST_ENABLED=false.
+model AllowedCreator {
+  id      String   @id @default(cuid())
+  email   String   @unique
+  addedBy String
+  addedAt DateTime @default(now())
+}
+
+// Reactive deny list — checked at sign-in and in requireCreator() in BOTH
+// allowlist modes. The owner can never be blocked.
+model BlockedEmail {
   id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String?
+  blockedBy String
+  blockedAt DateTime @default(now())
+}
+
+// Detective control: meaningful actions recorded for after-the-fact abuse
+// review. Owner-only; never sourced by the Results API (spec §9 privacy guard).
+model AuditLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  // Actor: a logged-in user (FK + email snapshot) or a guest (name only).
+  actorUserId String?
+  actorEmail  String?
+  guestName   String?
+  action      String
+  targetType  String?
+  targetId    String?
+  ip          String?
+  userAgent   String?
+  metadata    Json?
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action])
+}
+
+// ---------------------------------------------------------------------------
+// Poll domain (spec §6)
+// ---------------------------------------------------------------------------
+
+enum Timezone {
+  ET  @map("America/New_York")
+  CT  @map("America/Chicago")
+  MT  @map("America/Denver")
+  PT  @map("America/Los_Angeles")
+  GMT @map("Etc/GMT")
+}
+
+enum PollStatus {
+  open
+  closed
+}
+
+enum Response {
+  yes
+  no
+  ifneedbe
+}
+
+model Poll {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  title           String
+  description     String?
+  location        String?
+  timezone        Timezone   @default(ET)
+  createdById     String
+  status          PollStatus @default(open)
+  anonymousVoting Boolean    @default(false)
+  // Set on manual finalize; points at the winning TimeOption (spec §6).
+  finalTimeOptionId String?  @unique
+  createdAt       DateTime   @default(now())
+  closesAt        DateTime?
+
+  createdBy       User         @relation("PollCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  finalTimeOption TimeOption?  @relation("PollFinalOption", fields: [finalTimeOptionId], references: [id], onDelete: SetNull)
+  timeOptions     TimeOption[] @relation("PollTimeOptions")
+  participants    Participant[]
+}
+
+model TimeOption {
+  id        String   @id @default(cuid())
+  pollId    String
+  startTime DateTime // stored UTC
+  endTime   DateTime // stored UTC
+  sortOrder Int
+
+  poll           Poll           @relation("PollTimeOptions", fields: [pollId], references: [id], onDelete: Cascade)
+  finalizedFor   Poll?          @relation("PollFinalOption")
+  availabilities Availability[]
+
+  @@index([pollId])
+}
+
+model Participant {
+  id        String   @id @default(cuid())
+  pollId    String
+  userId    String? // null for guests
+  guestName String? // set for guests
   createdAt DateTime @default(now())
+
+  poll           Poll           @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  availabilities Availability[]
+
+  // One participation per logged-in user per poll, and one per guest name per
+  // poll (Postgres treats NULLs as distinct, so guests don't collide on userId
+  // and logged-in voters don't collide on guestName).
+  @@unique([pollId, userId])
+  @@unique([pollId, guestName])
+}
+
+model Availability {
+  id            String   @id @default(cuid())
+  participantId String
+  timeOptionId  String
+  response      Response
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  timeOption  TimeOption  @relation(fields: [timeOptionId], references: [id], onDelete: Cascade)
+
+  // Rows persist only for non-null responses; absence = "not marked" (spec §6).
+  @@unique([participantId, timeOptionId])
 }
