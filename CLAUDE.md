@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-**Phases 1–2 are done.** A Next.js App Router + TypeScript app is live at the repo root with Prisma against Postgres and Auth.js v5 Google sign-in (JWT sessions, no allowlist/adapter yet). The portable production image is proven by the `Dockerfile` (`docker build`); `docker compose` is dev-only and runs just a local Postgres. **Phase 2** plumbed the full design-token set from `docs/design/colors_and_type.css` into Tailwind `theme.extend` + CSS variables (`app/globals.css`), wired self-hosted fonts (Space Grotesk via `next/font/local`, Inter via `next/font/google`) and `lucide-react`, and shipped the `data-theme` light/dark mechanism (no-flash inline script + `lib/theme.ts` + `localStorage` `herd-theme`). Token specimen page: `/dev/tokens`. Phases 3–8 build on this — see `docs/plans/phases/`.
+**Phases 1–4 are done.** A Next.js App Router + TypeScript app is live at the repo root with Prisma against Postgres and Auth.js v5 Google sign-in (Prisma adapter + **database sessions** + full access control — see below). The portable production image is proven by the `Dockerfile` (`docker build`); `docker compose` is dev-only and runs just a local Postgres. **Phase 2** plumbed the full design-token set from `docs/design/colors_and_type.css` into Tailwind `theme.extend` + CSS variables (`app/globals.css`), wired self-hosted fonts (Space Grotesk via `next/font/local`, Inter via `next/font/google`) and `lucide-react`, and shipped the `data-theme` light/dark mechanism (no-flash inline script + `lib/theme.ts` + `localStorage` `herd-theme`). Token specimen page: `/dev/tokens`. **Phase 3** shipped the presentational component kit (`components/ui/`, showcase at `/dev/gallery`). **Phase 4** replaced the placeholder with the full Prisma data model and the access-control system — see "Auth & access control" below. Phases 5–8 build on this — see `docs/plans/phases/`.
 
 Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.npmrc` sets `node-linker=hoisted` so the standalone build and Prisma engine resolve). Commands (run from repo root):
 
@@ -15,12 +15,32 @@ Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.np
 - `pnpm lint` — ESLint (`next lint`); `pnpm format` / `pnpm format:check` — Prettier.
 - `pnpm migrate:dev` — create + apply a dev migration (`prisma migrate dev`).
 - `pnpm migrate:deploy` — apply pending migrations (`prisma migrate deploy`).
+- `pnpm db:seed` — idempotent owner bootstrap (allowlists `OWNER_EMAIL`, sets `isOwner`).
 - `docker compose up` — a **local dev Postgres only** (default port 5432, persistent `pgdata` volume), foreground so nothing lingers. The app runs on the host via `pnpm dev`. Copy `.env.example` → `.env` first (real Google OAuth creds needed for sign-in).
 - `docker build -t herd-scheduler .` — the self-contained production image (the portability constraint), runnable on any container runtime against any `DATABASE_URL`.
 
 No automated test suite exists yet — add one when the first phase that warrants it lands.
 
-The current Prisma schema is a single `HealthCheck` placeholder model proving the DB wire; the full data model arrives in Phase 4 and replaces it.
+The Prisma schema is the full Phase 4 data model (Auth.js tables + access control + poll domain). The Phase 1 `HealthCheck` placeholder is gone.
+
+## Auth & access control (Phase 4)
+
+Google OIDC via Auth.js v5 with the **Prisma adapter** and **database sessions** (`session.strategy: "database"` — sign-in persists `User`/`Account`/`Session`). Split config: `auth.config.ts` is edge-safe (providers only, no Prisma); `auth.ts` adds the adapter, the `signIn` gate, and the session/events callbacks.
+
+- **Creator access is mode-gated by `ALLOWLIST_ENABLED`** (default `true` when unset): `true` = poll creation requires an `AllowedCreator` row; `false` = any *verified* sign-in can create. The owner always passes.
+- **`signIn` gate** rejects `email_verified !== true` and any `BlockedEmail` *before* a user is created.
+- **Owner** = `OWNER_EMAIL` (case-insensitive). Bootstrapped by `pnpm db:seed` and the sign-in event (order-independent).
+- **Server-side chokepoints:** `requireCreator()` / `requireOwner()` in `lib/auth.ts` (re-check the DB each call). Pure, session-free helpers (`canCreatePolls`, `isEmailBlocked`, `isOwnerEmail`, `logAction`) live in `lib/access.ts` — keep them there to avoid an import cycle with `auth.ts`.
+- **`AuditLog`** records meaningful actions via `logAction()`; surfaced only on the owner-only `/admin` screen. **Never** source the Results API from it (anonymity privacy guard, spec §9).
+- The Google provider sets **`allowDangerousEmailAccountLinking: true`** — safe because Google verifies emails and we enforce `email_verified`. It links a Google sign-in to an existing same-email user instead of erroring with `OAuthAccountNotLinked`.
+
+### Local auth testing — dev-login bypass
+
+`app/api/dev/login/route.ts` is a **dev-only** sign-in bypass so you can test access-control flows without the Google round-trip (and so automated/agent sessions can authenticate via `curl`): `GET /api/dev/login?email=you@example.com[&name=…][&callbackUrl=/admin]` mints a `Session` + cookie directly (DB sessions make this just a row).
+
+- **Triple-gated:** returns 404 unless `NODE_ENV !== "production"` **and** `ENABLE_DEV_LOGIN === "true"` (default `false`). Never enable it in a real deployment.
+- It creates a `User` + `Session` but **no `Account`** row (no OAuth identity). Real Google sign-in creates `User` + `Account` (provider `google`) + `Session`.
+- **Gotcha:** before account-linking was enabled, dev-logging-in as an email you later used for *real* Google produced `OAuthAccountNotLinked` (an accountless user blocks the link). `allowDangerousEmailAccountLinking` now resolves this, but the cleaner habit is to **use throwaway emails (e.g. `test@example.com`) for the bypass and your real address only for real Google sign-in.** If you do hit a stale collision, delete the orphaned `User` row (cascades to `Session`/`Account`).
 
 ## Authoritative documents
 
