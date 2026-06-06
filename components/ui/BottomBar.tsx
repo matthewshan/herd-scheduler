@@ -17,20 +17,24 @@ export function BottomBar({ hint, progress, children }: BottomBarProps) {
 
   return (
     <div className="border-t border-border bg-bottombar-bg px-4 pt-3 shadow-sh-2 backdrop-blur-[10px] backdrop-saturate-[1.4] [padding-bottom:calc(12px+env(safe-area-inset-bottom))]">
-      {showHint && (
-        <div className="mb-[9px] flex items-center justify-between font-body text-[12.5px] text-fg2">
-          <span>{hint}</span>
-          {progress != null && (
-            <div className="ml-3 h-[5px] max-w-[120px] flex-1 overflow-hidden rounded-full bg-surface-2">
-              <span
-                className="block h-full rounded-full bg-brand transition-[width] duration-ds ease-ds"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
-      {children}
+      {/* Full-bleed frosted bar, but content stays in the centered phone column
+          so the primary action doesn't stretch edge-to-edge on wide screens. */}
+      <div className="mx-auto w-full max-w-[390px]">
+        {showHint && (
+          <div className="mb-[9px] flex items-center justify-between font-body text-[12.5px] text-fg2">
+            <span>{hint}</span>
+            {progress != null && (
+              <div className="ml-3 h-[5px] max-w-[120px] flex-1 overflow-hidden rounded-full bg-surface-2">
+                <span
+                  className="block h-full rounded-full bg-brand transition-[width] duration-ds ease-ds"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   );
 }

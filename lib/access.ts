@@ -55,8 +55,35 @@ export async function canCreatePolls(
   return allowed !== null;
 }
 
+/**
+ * Single source of truth for audit action names (spec §5). Both the `logAction`
+ * writers and the `/admin` filter dropdown derive from this, so the dropdown
+ * can never drift from what's actually logged. Add new actions here only.
+ */
+export const AUDIT_ACTIONS = {
+  signin: "signin",
+  pollCreate: "poll.create",
+  pollUpdate: "poll.update",
+  pollClose: "poll.close",
+  pollFinalize: "poll.finalize",
+  pollDelete: "poll.delete",
+  voteCast: "vote.cast",
+  voteUpdate: "vote.update",
+  creatorAdd: "creator.add",
+  creatorRemove: "creator.remove",
+  emailBlock: "email.block",
+  emailUnblock: "email.unblock",
+} as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+
+/** All action strings in admin-filter order (derived — do not hand-maintain). */
+export const AUDIT_ACTION_VALUES = Object.values(
+  AUDIT_ACTIONS,
+) as AuditAction[];
+
 export interface LogActionInput {
-  action: string;
+  action: AuditAction;
   actorUserId?: string | null;
   actorEmail?: string | null;
   guestName?: string | null;

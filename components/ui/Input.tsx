@@ -22,16 +22,24 @@ export interface LabelProps {
   htmlFor?: string;
   /** Appends a muted "(optional)" hint. */
   optional?: boolean;
+  /** Appends a required asterisk so required fields read unambiguously. */
+  required?: boolean;
   children: ReactNode;
 }
 
-export function Label({ htmlFor, optional, children }: LabelProps) {
+export function Label({ htmlFor, optional, required, children }: LabelProps) {
   return (
     <label
       htmlFor={htmlFor}
       className="mb-1.5 block font-body text-[13px] font-medium text-fg2"
     >
       {children}
+      {required && (
+        <span className="text-no" aria-hidden="true">
+          {" "}
+          *
+        </span>
+      )}
       {optional && <span className="font-normal text-fg3"> (optional)</span>}
     </label>
   );
@@ -88,6 +96,7 @@ export interface FieldProps {
   label: string;
   htmlFor?: string;
   optional?: boolean;
+  required?: boolean;
   error?: string;
   children: ReactNode;
 }
@@ -97,12 +106,13 @@ export function Field({
   label,
   htmlFor,
   optional,
+  required,
   error,
   children,
 }: FieldProps) {
   return (
     <div className="mb-4">
-      <Label htmlFor={htmlFor} optional={optional}>
+      <Label htmlFor={htmlFor} optional={optional} required={required}>
         {label}
       </Label>
       {children}

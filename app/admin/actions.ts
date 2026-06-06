@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/auth";
-import { isOwnerEmail, logAction, normalizeEmail } from "@/lib/access";
+import {
+  AUDIT_ACTIONS,
+  isOwnerEmail,
+  logAction,
+  normalizeEmail,
+} from "@/lib/access";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,7 +30,7 @@ export async function addCreator(formData: FormData): Promise<void> {
     update: {},
   });
   await logAction({
-    action: "creator.add",
+    action: AUDIT_ACTIONS.creatorAdd,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -43,7 +48,7 @@ export async function removeCreator(formData: FormData): Promise<void> {
 
   await prisma.allowedCreator.deleteMany({ where: { email } });
   await logAction({
-    action: "creator.remove",
+    action: AUDIT_ACTIONS.creatorRemove,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -69,7 +74,7 @@ export async function blockEmail(formData: FormData): Promise<void> {
     update: { reason },
   });
   await logAction({
-    action: "email.block",
+    action: AUDIT_ACTIONS.emailBlock,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -86,7 +91,7 @@ export async function unblockEmail(formData: FormData): Promise<void> {
 
   await prisma.blockedEmail.deleteMany({ where: { email } });
   await logAction({
-    action: "email.unblock",
+    action: AUDIT_ACTIONS.emailUnblock,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",

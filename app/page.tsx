@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { canCreatePolls } from "@/lib/access";
 
 export default async function Home() {
   const session = await auth();
+  const mayCreate = session?.user?.email
+    ? await canCreatePolls(session.user.email)
+    : false;
 
   // Prove the DB wire end-to-end against the real schema. The full screens land
   // in later phases.
@@ -36,6 +40,14 @@ export default async function Home() {
                 {session.user.name ?? session.user.email}
               </span>
             </p>
+            {mayCreate && (
+              <Link
+                href="/create"
+                className="rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white"
+              >
+                New poll
+              </Link>
+            )}
             {session.user.isOwner && (
               <Link href="/admin" className="text-sm text-blue-600 underline">
                 Manage access (admin)
