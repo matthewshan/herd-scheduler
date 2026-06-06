@@ -65,7 +65,7 @@ Per `docs/plans/initial-tech-spec.md` §3 — the next scaffolding step lands th
 
 ## Cross-cutting rules to keep in mind
 
-- **Portability is a hard constraint.** The app must run on any container runtime and connect to any Postgres via `DATABASE_URL`. Don't introduce host-specific code paths (Vercel-only, Supabase-only, etc.). Vercel + Supabase is one supported reference setup, not the target.
+- **Portability is a hard constraint.** The app must run on any container runtime and connect to any Postgres via `DATABASE_URL`. Don't introduce host-specific code paths (Vercel-only, Supabase-only, etc.). The **home deployment target** is self-hosted **k3s** with Postgres on the private LAN, the image pulled from **`ghcr.io`**, and public HTTPS via **Cloudflare Tunnel** (`AUTH_URL` = the public domain, `AUTH_TRUST_HOST=true`) — see spec §4 Reference C. Vercel + Supabase (Reference B) and a plain container runtime (Reference A) stay supported precisely to keep nothing host-specific; the k3s wiring itself is owner-managed and lands as docs in Phase 8.
 - **Times are stored UTC**, displayed in the poll's timezone. The poll-timezone picker is a fixed 5-zone enum (ET / CT / MT / PT / GMT), not the full IANA list.
 - **Best-fit scoring formula:** `yes*3 + maybe - no*4`. Top score wins; ties highlighted equally. "Works for everyone" is an independent badge fired when a slot has zero hard-No votes.
 - **Per-poll anonymity flag** (`anonymousVoting` on `Poll`) gates whether the Results API returns per-voter rows or aggregate counts only. Default visible. When `true`, never leak voter identity to any viewer.

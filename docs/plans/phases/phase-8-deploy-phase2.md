@@ -17,7 +17,11 @@ Phase 7 (MVP feature-complete). Hardening work touches the Phase 1 Dockerfile/co
 - **Harden the Dockerfile:** slim multi-stage build, run as **non-root**, ship no build tooling to the
   runtime image, copy only the standalone server. Keep the image small.
 - **Migrations as a one-shot:** `prisma migrate deploy` as an entrypoint step / init container / CI step —
-  not tied to any platform. Document the chosen approach.
+  not tied to any platform. For the home k3s deploy this is a **pre-deploy `Job` / init container** against
+  the LAN Postgres (the app container only runs `node server.js`). Document the chosen approach.
+- **Image publishing (ghcr.io):** a GitHub Actions workflow builds the `Dockerfile` image and pushes it to
+  **`ghcr.io/<owner>/herd-scheduler:<tag>`** on release/merge, so the cluster pulls a tagged image rather
+  than building in-cluster. (The cluster manifests/wiring are owner-managed — out of scope here.)
 - **Abuse hardening (preventive controls):**
   - **Rate-limit** poll creation and voting (portable, no host-specific service).
   - **Size caps** (env-tunable, portable): per-creator poll count, per-poll time-option count, per-poll
@@ -26,6 +30,11 @@ Phase 7 (MVP feature-complete). Hardening work touches the Phase 1 Dockerfile/co
 - **Stateless verification:** confirm no local disk state — sessions in the JWT cookie or DB — so N
   replicas run behind any load balancer.
 - **Deployment docs:**
+  - **Reference C — self-hosted k3s + LAN Postgres (the home / primary target):** image from `ghcr.io`,
+    Postgres on the private LAN via a direct `DATABASE_URL` (no `DIRECT_URL`), public HTTPS via **Cloudflare
+    Tunnel** (TLS terminates at the edge — no cert-manager/port-forwarding), `AUTH_URL` = the public domain
+    with `AUTH_TRUST_HOST=true`, and `prisma migrate deploy` as a pre-deploy `Job`. Document the env/secret
+    split and the OAuth redirect-URI wiring. (Manifests themselves are owner-managed — out of scope.)
   - **Reference A — any container runtime + Postgres** (the compose path; note k3s Deployment/Service/
     Ingress equivalence).
   - **Reference B — Vercel + Supabase:** pooled connection for `DATABASE_URL` (port `6543`,
@@ -46,6 +55,7 @@ Create short stub briefs (in this folder or a `phase-2-backlog/` subfolder) mark
 ## Files to create / touch
 
 - `Dockerfile` (harden), `docker-compose.yml` (tighten), `.dockerignore`
+- `.github/workflows/*` — build + push the image to `ghcr.io` on release/merge
 - Entrypoint / init script for `prisma migrate deploy`
 - `lib/rate-limit.ts` (or middleware) applied to create + vote actions
 - Size-cap checks in the create + vote server actions (env-tunable limits)
@@ -63,13 +73,17 @@ None — this is ops/infra and backlog documentation.
 - Rate limits are enforced on poll creation and voting (verify by exceeding the limit).
 - Size caps are enforced (exceeding per-creator poll / per-poll option / per-poll participant limits is
   rejected with a clear error).
-- Both deployment references are documented and the compose path is validated end-to-end.
+- The home k3s target (Reference C) plus references A and B are documented; the compose path is validated
+  end-to-end and the image is published to `ghcr.io` by CI.
 - The three Phase 2 features exist as clearly-marked future briefs; the email brief flags the open provider
   decision (spec §11).
 
 ## Out of scope
 
 - Implementing any Phase 2 feature (timezone toggle, expiry, notifications) — they are documented only.
+- The cluster's own manifests/wiring (k3s `Deployment`/`Service`/`Secret`/`ConfigMap`, the Cloudflare Tunnel
+  config, the LAN Postgres host) — owner-managed. This phase fixes the deployment **shape** and the env/CI
+  contract the app must satisfy, not the cluster config.
 
 ## Spec references
 
