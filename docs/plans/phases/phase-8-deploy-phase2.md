@@ -18,7 +18,11 @@ Phase 7 (MVP feature-complete). Hardening work touches the Phase 1 Dockerfile/co
   runtime image, copy only the standalone server. Keep the image small.
 - **Migrations as a one-shot:** `prisma migrate deploy` as an entrypoint step / init container / CI step —
   not tied to any platform. Document the chosen approach.
-- **Rate-limit** poll creation and voting (portable, no host-specific service).
+- **Abuse hardening (preventive controls):**
+  - **Rate-limit** poll creation and voting (portable, no host-specific service).
+  - **Size caps** (env-tunable, portable): per-creator poll count, per-poll time-option count, per-poll
+    participant count. Input-size guards that bound runaway abuse, complementing the Phase 4 audit log +
+    blocklist (detective + reactive) and the `ALLOWLIST_ENABLED` gate.
 - **Stateless verification:** confirm no local disk state — sessions in the JWT cookie or DB — so N
   replicas run behind any load balancer.
 - **Deployment docs:**
@@ -44,6 +48,7 @@ Create short stub briefs (in this folder or a `phase-2-backlog/` subfolder) mark
 - `Dockerfile` (harden), `docker-compose.yml` (tighten), `.dockerignore`
 - Entrypoint / init script for `prisma migrate deploy`
 - `lib/rate-limit.ts` (or middleware) applied to create + vote actions
+- Size-cap checks in the create + vote server actions (env-tunable limits)
 - `docs/` deployment guide(s) — or expand spec §4 in place
 - `docs/plans/phases/phase-2-backlog/*.md` (or equivalent) — the three stub briefs
 
@@ -56,6 +61,8 @@ None — this is ops/infra and backlog documentation.
 - The hardened image runs as a **non-root** user and contains no build tooling.
 - `prisma migrate deploy` runs as a documented one-shot against a fresh DB.
 - Rate limits are enforced on poll creation and voting (verify by exceeding the limit).
+- Size caps are enforced (exceeding per-creator poll / per-poll option / per-poll participant limits is
+  rejected with a clear error).
 - Both deployment references are documented and the compose path is validated end-to-end.
 - The three Phase 2 features exist as clearly-marked future briefs; the email brief flags the open provider
   decision (spec §11).

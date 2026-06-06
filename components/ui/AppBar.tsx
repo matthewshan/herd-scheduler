@@ -1,12 +1,18 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+
+const backBtnClass =
+  "flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-[10px] text-fg1 transition-colors duration-ds ease-ds hover:bg-surface-2";
 
 export interface AppBarProps {
   title: string;
-  /** Back affordance — renders a leading icon button when provided. */
+  /** Back affordance as a callback — renders a leading icon button. */
   onBack?: () => void;
+  /** Back affordance as a link — for server-rendered pages (no client handler). */
+  backHref?: string;
   /** Secondary line under the title (host, location, etc.). */
   hostLine?: ReactNode;
   /** Trailing controls, typically the theme toggle. */
@@ -16,19 +22,31 @@ export interface AppBarProps {
 // Sticky, frosted app header: optional back button, title, trailing controls,
 // and an optional host/meta line. Blur + translucency come from the theme's
 // appbar-bg token.
-export function AppBar({ title, onBack, hostLine, right }: AppBarProps) {
+export function AppBar({
+  title,
+  onBack,
+  backHref,
+  hostLine,
+  right,
+}: AppBarProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-appbar-bg px-4 pb-[13px] pt-3 backdrop-blur-[10px] backdrop-saturate-[1.4]">
       <div className="flex items-center gap-2.5">
-        {onBack && (
+        {onBack ? (
           <button
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-[10px] text-fg1 transition-colors duration-ds ease-ds hover:bg-surface-2"
+            className={backBtnClass}
           >
             <ArrowLeft size={20} />
           </button>
+        ) : (
+          backHref && (
+            <Link href={backHref} aria-label="Back" className={backBtnClass}>
+              <ArrowLeft size={20} />
+            </Link>
+          )
         )}
         <h1 className="ds-h1 min-w-0 flex-1 truncate">{title}</h1>
         {right}

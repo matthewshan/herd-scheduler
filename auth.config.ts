@@ -1,9 +1,10 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 
-// Basic OIDC sign-in scopes only (openid, email, profile) — non-sensitive, so
-// no Google verification is needed (spec §7). No allowlist gate or Prisma
-// adapter yet; those arrive in Phase 4. JWT sessions are fine for now.
+// Edge-safe provider config (no Prisma). The adapter, database sessions, and
+// the signIn gate live in auth.ts (Node runtime). Basic OIDC scopes only
+// (openid, email, profile) — non-sensitive, so no Google verification needed
+// (spec §7).
 export const authConfig = {
   providers: [
     Google({
@@ -15,9 +16,14 @@ export const authConfig = {
       authorization: {
         params: { scope: "openid email profile" },
       },
+      // Link a Google sign-in to an existing user with the same email instead of
+      // erroring with OAuthAccountNotLinked. "Dangerous" only for providers that
+      // don't verify emails — safe here: Google verifies them and our signIn
+      // callback additionally rejects email_verified=false. Also lets the
+      // dev-login bypass and real Google coexist for the same address.
+      allowDangerousEmailAccountLinking: true,
     }),
   ],
-  session: { strategy: "jwt" },
   // Self-hosted / container deployments must opt in via AUTH_TRUST_HOST=true so
   // callback URLs and the OAuth response (incl. the `iss` parameter) are parsed
   // against AUTH_URL's origin. Left undefined when unset so Auth.js keeps its own

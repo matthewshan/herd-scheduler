@@ -127,7 +127,9 @@ AUTH_SECRET=           # Auth.js session signing
 AUTH_URL=              # public base URL of this deployment (set explicitly)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-OWNER_EMAIL=           # bootstrap admin/allowlist
+OWNER_EMAIL=           # bootstrap admin/allowlist owner; gets isOwner + admin access in any mode
+ALLOWLIST_ENABLED=     # "true" (default) gates poll creation by the AllowedCreator list;
+                       # "false" lets any verified Google login create polls
 APP_TIMEZONE=America/New_York
 ```
 
@@ -140,14 +142,25 @@ Keep them portable: expose poll auto-close as a plain authenticated endpoint or 
 
 ## 5. Auth & Access Control Model
 
-Three levels of access:
+Levels of access:
 
 1. **Anonymous voter** — opens a poll link, votes as a guest (display name only). No account.
 2. **Logged-in voter** — signs in with Google. Gets a stable identity tied to their votes.
-3. **Creator (allowlisted)** — logged in **and** on the `AllowedCreator` list. Can create/manage polls.
-4. **Owner (you)** — a creator with an admin flag who manages the allowlist.
+3. **Creator** — logged in and permitted to create/manage polls (see the allowlist toggle below).
+4. **Owner (you)** — a creator with an admin flag who manages access (allowlist, blocklist, audit log).
 
-Flow for creating a poll: must be logged in → check email against allowlist → allow/deny. The allowlist is seeded from `OWNER_EMAIL` on first boot; you manage the rest from an admin screen.
+**Creator access is a configurable mode** via `ALLOWLIST_ENABLED`:
+
+- `true` (default) — must be logged in **and** on the `AllowedCreator` list. The list is seeded from `OWNER_EMAIL` on first boot; you manage the rest from the admin screen.
+- `false` — any **verified** logged-in Google user can create polls (no list to maintain).
+
+Flow for creating a poll: must be logged in (and `email_verified`, see §7) → not on the blocklist → if `ALLOWLIST_ENABLED`, on the `AllowedCreator` list → allow/deny. The owner always passes. A single server-side helper (`requireCreator()`) is the chokepoint for this decision.
+
+> **Authentication ≠ authorization.** A successful Google sign-in proves *identity*, not *trustworthiness* — anyone can create a Gmail account in minutes. So the allowlist/blocklist is the authorization gate; it is what keeps the site from being abused when opened up, **not** the act of signing in.
+
+**Blocklist** (`BlockedEmail`) — a reactive deny list, checked at sign-in and in `requireCreator()` in **both** modes. Lets the owner ban an abuser spotted in the audit log without flipping the whole site back to allowlist mode. The owner can never be blocked.
+
+**Audit log** (`AuditLog`) — every meaningful action (sign-in, poll create/update/close/finalize/delete, vote cast/update, creator add/remove, email block/unblock) is recorded for after-the-fact abuse review. It is a **detective** control, not preventive. Owner-only; never feeds the Results API (see §9).
 
 The Vote screen exposes an **inline "Sign in" link** next to the guest name input. This uses the same Auth.js Google provider as the dedicated Sign-in screen — it's an alternate entry point, not a separate flow. After completing OAuth, the user returns to the same vote page with their votes preserved.
 
@@ -157,6 +170,8 @@ The Vote screen exposes an **inline "Sign in" link** next to the guest name inpu
 
 - **User** — id, email, name, image, isOwner. (Plus Auth.js `Account`/`Session` tables.)
 - **AllowedCreator** — email, addedBy, addedAt.
+- **BlockedEmail** — email (unique), reason?, blockedBy, blockedAt.
+- **AuditLog** — id, createdAt, actorUserId? (nullable for guests/anon), actorEmail? (snapshot, survives user deletion), guestName?, action (e.g. `signin`, `poll.create`, `poll.update`, `poll.close`, `poll.finalize`, `poll.delete`, `vote.cast`, `vote.update`, `creator.add`, `creator.remove`, `email.block`, `email.unblock`), targetType?, targetId?, ip?, userAgent?, metadata (JSON). Indexed on createdAt and action.
 - **Poll** — id, slug (unique), title, description?, location?, timezone (enum: `America/New_York` | `America/Chicago` | `America/Denver` | `America/Los_Angeles` | `Etc/GMT`), createdById, status (`open` | `closed`), **anonymousVoting** (bool, default `false`), finalTimeOptionId?, createdAt, closesAt?.
 - **TimeOption** — id, pollId, startTime (UTC), endTime (UTC), sortOrder.
 - **Participant** — id, pollId, userId? (nullable for guests), guestName?, createdAt.
@@ -174,6 +189,7 @@ Notes:
 Standard OpenID Connect via the Auth.js Google provider, using only the basic sign-in scopes (`openid`, `email`, `profile`).
 
 - These are **non-sensitive** scopes, so the app does **not** require Google's verification/security review, and there's no test-user cap to worry about. (This is the upside of dropping calendar integration — that was the only piece that pulled in sensitive scopes.)
+- **`email_verified` is enforced:** the `signIn` callback rejects any account whose ID-token `email_verified` claim is not `true`. The `email` scope returns this claim, so it costs nothing and rejects edge-case unverified accounts before they get an identity.
 - You still create an OAuth client in the Google Cloud Console and register redirect URIs.
 - Both the dedicated Sign-in screen and the inline "Sign in" link on the Vote screen use the same OAuth client — they're just two entry points into the same flow.
 
@@ -219,7 +235,9 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 
 ### General hardening
 - `AUTH_SECRET` set per environment; secure, http-only cookies (Auth.js handles CSRF).
-- Rate-limit poll creation and voting.
+- **`email_verified` sign-in gate** (§7) and a reactive **blocklist** (§5) — the authorization gate that keeps the site safe when `ALLOWLIST_ENABLED=false`.
+- **Audit log** (§5) of meaningful actions for after-the-fact abuse review. **Privacy guard:** the owner-only audit viewer shows actor identity even for `anonymousVoting` polls, so the Results API must **never** derive voter identity from `AuditLog` — keep the two paths strictly separate or the anonymity flag is backdoored.
+- Rate-limit poll creation and voting, plus per-creator / per-poll size caps (Phase 8).
 - *(If you later want the site fully unreachable to outsiders — not just unindexed — the path is an identity proxy like Cloudflare Access or a VPN, which would mean dropping anonymous guest voting. Out of scope for now.)*
 
 ---
@@ -240,4 +258,4 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 1. **Email provider** when notifications land in Phase 2 — Resend, SES, SMTP?
 2. **Mutability of the anonymity setting** after votes already exist. Default proposal: lock it once any vote is cast (otherwise it would retroactively reveal or hide identities a voter assumed were private/public when they responded).
 
-*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo.
+*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo; optional allowlist via `ALLOWLIST_ENABLED` (default on); reactive email blocklist; owner-only audit log + viewer; `email_verified` sign-in gate; per-poll/per-creator size caps deferred to Phase 8.

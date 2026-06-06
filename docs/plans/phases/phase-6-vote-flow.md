@@ -29,6 +29,8 @@ Phase 3 (kit components: `Segmented`, slot card, sticky bars, `TzChip`) and Phas
   - Create or find the `Participant` (by `userId` when logged in, or by `guestName` for guests).
   - Upsert `Availability` rows. **Tap-to-clear / unmarked = delete the row** (absence means "not marked").
   - **Re-submitting updates** the existing participant's rows rather than duplicating.
+  - Calls the Phase 4 `logAction()` writer with `vote.cast` (first submit) / `vote.update`, targeting the
+    poll. For guests, record `guestName` and leave the actor user null.
 - Times displayed in the poll's timezone with the `TzChip`; never expose UTC to the user.
 
 ## Files to create / touch

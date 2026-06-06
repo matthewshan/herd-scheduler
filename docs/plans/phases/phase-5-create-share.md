@@ -30,6 +30,13 @@ gate, slug helper).
   - Writes the `Poll` + ordered `TimeOption` rows. **Convert the picked local (poll-timezone) times to UTC**
     for storage; keep `sortOrder`.
   - Persists `anonymousVoting`.
+  - Calls the Phase 4 `logAction()` writer with `poll.create` (and `poll.update` on edits), targeting the
+    new poll.
+  - **Centralize the audit action names.** Phase 4 left the action strings duplicated between the
+    `logAction()` call sites and the hardcoded `AUDIT_ACTIONS` filter list in `app/admin/page.tsx`. As the
+    first phase to add new actions (`poll.*`), promote them to a single source of truth (an `as const`
+    object / union in `lib/access.ts`) that both the writers and the admin filter derive from, so the
+    dropdown can't drift from what's actually logged.
 - **Share success state:** after create, show the `/p/{slug}` link with a **copy-link** affordance and the
   success copy from the design bundle.
 - **Route `/p/{slug}`** registered (the vote screen itself is Phase 6; here just ensure the slug resolves

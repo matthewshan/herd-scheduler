@@ -22,11 +22,13 @@ Phase 5 (polls + slots exist) and Phase 6 (votes exist). Uses kit components fro
   - **`AvatarStack`** of who can make it — **only when the poll is non-anonymous**.
 - **Manual finalize (host only):** writing `Poll.finalTimeOptionId`. Highlighting is guidance, never an
   automatic decision. Finalized state shows a **top-of-page banner** + a per-card check marker; the host can
-  **change the pick**.
+  **change the pick**. The finalize/close server action calls the Phase 4 `logAction()` writer with
+  `poll.finalize` / `poll.close`, targeting the poll.
 - **Anonymity-aware Results API / data layer:** when `Poll.anonymousVoting == true`, return **aggregate
   counts only** — never per-voter rows or avatar data — **regardless of viewer role** (including the host).
   When false, per-voter avatars/names are returned for the attendee stack. Enforce this at the data-fetch
-  layer, not just the UI, so identity can't leak through the API.
+  layer, not just the UI, so identity can't leak through the API. **Never source Results from `AuditLog`**
+  (which records voter identity for owner review even on anonymous polls) — keep the two paths separate.
 
 ## Files to create / touch
 

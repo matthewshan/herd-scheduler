@@ -5,11 +5,11 @@ import { prisma } from "@/lib/prisma";
 export default async function Home() {
   const session = await auth();
 
-  // Prove the DB wire end-to-end: touch the placeholder model. The full
-  // schema and real screens land in later phases.
+  // Prove the DB wire end-to-end against the real schema. The full screens land
+  // in later phases.
   let dbStatus = "unknown";
   try {
-    await prisma.healthCheck.count();
+    await prisma.user.count();
     dbStatus = "connected";
   } catch {
     dbStatus = "unreachable";
@@ -36,6 +36,11 @@ export default async function Home() {
                 {session.user.name ?? session.user.email}
               </span>
             </p>
+            {session.user.isOwner && (
+              <Link href="/admin" className="text-sm text-blue-600 underline">
+                Manage access (admin)
+              </Link>
+            )}
             <form
               action={async () => {
                 "use server";

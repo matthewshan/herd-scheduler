@@ -1,7 +1,7 @@
 # Implementation phases
 
 This folder re-slices the milestones in [`../initial-tech-spec.md`](../initial-tech-spec.md) §10 into
-**8 agent-sized work orders**. Each file is a self-contained brief: hand one to an agent and it has
+**agent-sized work orders**. Each file is a self-contained brief: hand one to an agent and it has
 everything it needs without reading the others end-to-end.
 
 ## Phases
@@ -10,23 +10,26 @@ everything it needs without reading the others end-to-end.
 |---|-------|------|-----------|------|
 | 1 | [Scaffold + container baseline](phase-1-scaffold.md) | Running Next.js app + proven `docker compose up` | — | ☑ |
 | 2 | [Design tokens, theming, fonts & icons](phase-2-design-tokens.md) | Tokens in Tailwind + working light/dark theme | 1 | ☑ |
-| 3 | [Design-system kit components](phase-3-kit-components.md) | Production components matching the prototype | 2 | ☐ |
-| 4 | [Data model + auth & access control](phase-4-data-auth.md) | Full schema + three-tier access working | 1 | ☐ |
+| 3 | [Design-system kit components](phase-3-kit-components.md) | Production components matching the prototype | 2 | ☑ |
+| 4 | [Data model + auth & access control](phase-4-data-auth.md) | Full schema + access model (optional allowlist, blocklist, audit log) working | 1 | ☑ |
 | 5 | [Create poll + share flow](phase-5-create-share.md) | Host builds and publishes a poll | 3, 4 | ☐ |
 | 6 | [Vote flow (guest + inline sign-in)](phase-6-vote-flow.md) | Anyone with the link can mark availability | 3, 4 | ☐ |
 | 7 | [Results + finalize](phase-7-results-finalize.md) | Best-fit results + manual finalize, anonymity-correct | 5, 6 | ☐ |
 | 8 | [Deploy hardening + Phase 2 backlog](phase-8-deploy-phase2.md) | Production-ready container/ops + documented backlog | 7 | ☐ |
+| 9 | [Automated testing](phase-9-testing.md) | First test suite — access-control integration + a Playwright smoke layer, in CI | 4 (extends with 5–7) | ☐ |
 
 ## Dependency graph
 
 ```
 P1 Scaffold ─┬─> P2 Tokens/Theming ──> P3 Kit components ─┐
              └─> P4 Data model + Auth ─────────────────────┼─> P5 Create+Share ─┐
-                                                            ├─> P6 Vote flow ────┼─> P7 Results+Finalize ─> P8 Deploy/Phase2
-                                                            └────────────────────┘
+                                       │                    ├─> P6 Vote flow ────┼─> P7 Results+Finalize ─> P8 Deploy/Phase2
+                                       │                    └────────────────────┘
+                                       └─> P9 Testing (cross-cutting; starts after P4, extends through P7)
 ```
 
-P2 and P4 can run in parallel after P1. P3 needs P2. P5 and P6 need P3 + P4. P7 needs P5 + P6.
+P2 and P4 can run in parallel after P1. P3 needs P2. P5 and P6 need P3 + P4. P7 needs P5 + P6. P9 is
+cross-cutting: it can start as soon as P4 lands and is extended as P5–P7 add flows — it blocks nothing.
 
 ## Shared template
 

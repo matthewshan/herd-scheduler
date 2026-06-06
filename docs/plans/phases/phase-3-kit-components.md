@@ -17,9 +17,9 @@ Phase 2 (tokens, fonts, icons, theming all available).
 Build each of these as a standard Next.js/React + Tailwind component, ported from the prototype's
 `Shared.jsx`, `Calendar.jsx`, and `kit.css`:
 
-- **`Segmented`** — the signature 3-way control (Yes / If-need-be / No): pill track, tinted sliding thumb,
-  check glyph on the selected segment, and **tap-to-clear** (tapping the active segment returns to
-  "not marked"). Uses the semantic vote tints.
+- **`Segmented`** — the signature 3-way control (Yes / If-need-be / No): pill track, the selected segment
+  cross-fades to its semantic vote tint, a check glyph reveals on it, and **tap-to-clear** (tapping the
+  active segment returns to "not marked"). Matches the prototype's per-segment tint (no sliding thumb).
 - **Slot card** — the container that holds a time + a `Segmented` (vote screen) or a tally (results).
 - **`StackedBar`** — proportional Yes/Maybe/No tally bar.
 - **`Tally`** — the Yes/Maybe/No count readout.
@@ -39,8 +39,8 @@ Deliver a **gallery / showcase page** (a dev-only route) that renders every comp
 states, in both light and dark, for visual diffing against the prototype.
 
 Carry over verbatim: ~390px mobile-first frame (phone-width column on larger viewports); touch targets
-≥ 44px; tabular figures on all clock times; the `--ease` / `--dur` motion tokens for the thumb slide and
-tint cross-fade.
+≥ 44px; tabular figures on all clock times; the `--ease` / `--dur` motion tokens for the segment tint
+cross-fade and check reveal.
 
 ## Files to create / touch
 
@@ -64,8 +64,8 @@ tint cross-fade.
 ## Acceptance criteria
 
 - The gallery renders every component in light + dark with no console errors.
-- `Segmented` slides the thumb, cross-fades the tint, shows the check, and **clears on re-tap of the active
-  segment**.
+- `Segmented` cross-fades the selected segment's tint, shows the check, and **clears on re-tap of the
+  active segment**.
 - All touch targets ≥ 44px; clock times use tabular figures.
 - `MiniCalendar` supports multi-day selection driven by props (not the baked-in sample data).
 - Visual diff against `preview/*.html` and `screenshots/` is clean.
