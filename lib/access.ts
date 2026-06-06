@@ -44,8 +44,10 @@ export async function canCreatePolls(
   email: string | null | undefined,
 ): Promise<boolean> {
   if (!email) return false;
-  if (await isEmailBlocked(email)) return false;
+  // Owner first: the owner can never be locked out (matches the BlockedEmail
+  // invariant and requireOwner), so check ownership before the blocklist.
   if (isOwnerEmail(email)) return true;
+  if (await isEmailBlocked(email)) return false;
   if (!isAllowlistEnabled()) return true;
   const allowed = await prisma.allowedCreator.findUnique({
     where: { email: normalizeEmail(email) },

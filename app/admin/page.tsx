@@ -32,10 +32,26 @@ const AUDIT_ACTIONS = [
   "email.unblock",
 ];
 
-const fmt = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+// Render audit timestamps in a fixed display zone so they read the same no
+// matter what timezone the container runs in. Configurable via APP_TIMEZONE
+// (the app's display default); falls back to ET if unset or invalid.
+function makeAuditFmt(): Intl.DateTimeFormat {
+  const tz = process.env.APP_TIMEZONE || "America/New_York";
+  const opts: Intl.DateTimeFormatOptions = {
+    dateStyle: "medium",
+    timeStyle: "short",
+  };
+  try {
+    return new Intl.DateTimeFormat("en-US", { ...opts, timeZone: tz });
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      ...opts,
+      timeZone: "America/New_York",
+    });
+  }
+}
+
+const fmt = makeAuditFmt();
 
 interface AdminPageProps {
   searchParams: Promise<{ action?: string }>;

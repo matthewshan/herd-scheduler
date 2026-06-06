@@ -16,10 +16,11 @@ Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.np
 - `pnpm migrate:dev` — create + apply a dev migration (`prisma migrate dev`).
 - `pnpm migrate:deploy` — apply pending migrations (`prisma migrate deploy`).
 - `pnpm db:seed` — idempotent owner bootstrap (allowlists `OWNER_EMAIL`, sets `isOwner`).
+- `pnpm test` — Vitest unit tests (`pnpm test:watch` to watch).
 - `docker compose up` — a **local dev Postgres only** (default port 5432, persistent `pgdata` volume), foreground so nothing lingers. The app runs on the host via `pnpm dev`. Copy `.env.example` → `.env` first (real Google OAuth creds needed for sign-in).
 - `docker build -t herd-scheduler .` — the self-contained production image (the portability constraint), runnable on any container runtime against any `DATABASE_URL`.
 
-No automated test suite exists yet — add one when the first phase that warrants it lands.
+Testing has started with **Vitest unit tests** (`pnpm test`) covering the access-control logic (`lib/access.test.ts` — the `canCreatePolls` owner × blocked × allowlist matrix) and slug shaping (`lib/slug.test.ts`); DB use is mocked. The full harness — real-Postgres integration tests + a Playwright smoke layer + CI — is **Phase 9** (`docs/plans/phases/phase-9-testing.md`).
 
 The Prisma schema is the full Phase 4 data model (Auth.js tables + access control + poll domain). The Phase 1 `HealthCheck` placeholder is gone.
 
