@@ -14,6 +14,7 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
     "capture:visual": "tsx tests/visual/capture.mts",

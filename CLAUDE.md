@@ -71,7 +71,7 @@ Per `docs/plans/initial-tech-spec.md` §3 — the next scaffolding step lands th
 - **Times are stored UTC**, displayed in the poll's timezone. The poll-timezone picker is a fixed 5-zone enum (ET / CT / MT / PT / GMT), not the full IANA list.
 - **Best-fit scoring formula:** `yes*3 + maybe - no*4`. Top score wins; ties highlighted equally. "Works for everyone" is an independent badge fired when a slot has zero hard-No votes.
 - **Per-poll anonymity flag** (`anonymousVoting` on `Poll`) gates whether the Results API returns per-voter rows or aggregate counts only. Default visible. When `true`, never leak voter identity to any viewer.
-- **Slug format:** `kebab(title) + "-" + nanoid(5)` (e.g. `game-night-x9f2`). Unique constraint; retry on collision.
+- **Slug format:** `kebab(title) + "-" + nanoid(8)` (e.g. `game-night-x9f2`). Unique constraint; retry on collision.
 - **Voice:** sentence case everywhere, peer-to-peer, address user as "you", refer to the host by first name. The design bundle's README has the full content guide.
 - **TypeScript conventions:** follow `docs/typescript-standards.md` — notably, component props are declared as named `interface`s (never inline object-type literals), `type` is reserved for unions/aliases, and native-element wrappers extend the matching `*HTMLAttributes` type.
 

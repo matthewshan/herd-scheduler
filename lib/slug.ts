@@ -1,13 +1,15 @@
-// Slug generation (spec §6): kebab(title) + "-" + nanoid(5), unique with retry
+// Slug generation (spec §6): kebab(title) + "-" + nanoid(8), unique with retry
 // on collision. Exposed for the create flow (Phase 5).
 
 import { customAlphabet } from "nanoid";
 import { prisma } from "@/lib/prisma";
 
-// Lowercase alphanumerics only, so slugs read like the spec example
-// (game-night-x9f2) and stay URL-safe.
+// Lowercase alphanumerics only, so slugs stay URL-safe and human-recognizable.
+// An 8-char suffix over a 36-char alphabet is ~2.8e12 combinations per title, so
+// the collision retry below effectively never fires and the unguessable space
+// keeps URLs non-enumerable (spec §9).
 const SUFFIX_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
-const SUFFIX_LENGTH = 5;
+const SUFFIX_LENGTH = 8;
 const nanoid = customAlphabet(SUFFIX_ALPHABET, SUFFIX_LENGTH);
 
 /** kebab-case a title: lowercase, strip accents/punctuation, collapse to "-". */
@@ -21,14 +23,14 @@ export function slugify(title: string): string {
   return base || "poll";
 }
 
-/** A single slug candidate: `kebab(title)-<5 char suffix>`. */
+/** A single slug candidate: `kebab(title)-<8 char suffix>`. */
 export function makeSlug(title: string): string {
   return `${slugify(title)}-${nanoid()}`;
 }
 
 /**
  * Generate a slug that doesn't yet exist, retrying on the unique collision.
- * Five tries is astronomically safe given the 36^5 suffix space per title.
+ * Five tries is astronomically safe given the 36^8 suffix space per title.
  */
 export async function generateUniqueSlug(
   title: string,

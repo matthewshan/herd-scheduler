@@ -132,10 +132,11 @@ export function formatSlotInZone(
 ): DisplaySlot {
   const iana = ianaFor(tz);
   const zStart = toZonedTime(startUtc, iana);
+  const zEnd = toZonedTime(endUtc, iana);
   return {
     date: format(zStart, "EEE, MMM d", { timeZone: iana }),
-    start: format(toZonedTime(startUtc, iana), "h:mm a", { timeZone: iana }),
-    end: format(toZonedTime(endUtc, iana), "h:mm a", { timeZone: iana }),
+    start: format(zStart, "h:mm a", { timeZone: iana }),
+    end: format(zEnd, "h:mm a", { timeZone: iana }),
   };
 }
 

@@ -19,6 +19,7 @@ export default async function CreatePage() {
       <CreateForm
         initialYear={now.getFullYear()}
         initialMonth={now.getMonth()}
+        initialDay={now.getDate()}
       />
     </div>
   );

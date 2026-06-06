@@ -18,6 +18,20 @@ const fieldClass = (err?: boolean) =>
       : "border-border-strong focus:border-brand focus:shadow-[0_0_0_3px_rgba(0,119,182,0.18)]",
   ].join(" ");
 
+/**
+ * The red required marker. `aria-hidden` because required fields carry the
+ * semantics via `aria-required`/`required` on the control itself — the asterisk
+ * is a visual cue only. Shared so labels and section headings stay identical.
+ */
+export function RequiredMark() {
+  return (
+    <span className="text-no" aria-hidden="true">
+      {" "}
+      *
+    </span>
+  );
+}
+
 export interface LabelProps {
   htmlFor?: string;
   /** Appends a muted "(optional)" hint. */
@@ -34,12 +48,7 @@ export function Label({ htmlFor, optional, required, children }: LabelProps) {
       className="mb-1.5 block font-body text-[13px] font-medium text-fg2"
     >
       {children}
-      {required && (
-        <span className="text-no" aria-hidden="true">
-          {" "}
-          *
-        </span>
-      )}
+      {required && <RequiredMark />}
       {optional && <span className="font-normal text-fg3"> (optional)</span>}
     </label>
   );

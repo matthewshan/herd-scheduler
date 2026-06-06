@@ -63,7 +63,7 @@ gate, slug helper).
 - Creating a poll writes a `Poll` plus correctly-ordered `TimeOption` rows whose `startTime`/`endTime` are
   **UTC** (verify a known ET input round-trips correctly).
 - The time range sticks as the default for the next day added.
-- Slug matches `kebab(title)-nanoid(5)`, is unique, and resolves at `/p/{slug}`.
+- Slug matches `kebab(title)-nanoid(8)`, is unique, and resolves at `/p/{slug}`.
 - The anonymity toggle persists (`anonymousVoting`) and defaults to visible.
 - Copy-link copies the full shareable URL.
 - Timezone chip shows the selected zone; defaults to ET.

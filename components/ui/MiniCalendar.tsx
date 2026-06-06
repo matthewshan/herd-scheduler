@@ -24,6 +24,8 @@ export interface MiniCalendarProps {
   onToggleDay: (year: number, month: number, day: number) => void;
   /** Earliest navigable month (inclusive). */
   min?: { year: number; month: number };
+  /** Earliest selectable day (inclusive); earlier days render disabled. */
+  minDay?: { year: number; month: number; day: number };
   /** Latest navigable month (inclusive). */
   max?: { year: number; month: number };
 }
@@ -45,12 +47,15 @@ export function MiniCalendar({
   added,
   onToggleDay,
   min,
+  minDay,
   max,
 }: MiniCalendarProps) {
   const cells = buildMonthGrid(year, month);
   const here = { year, month };
   const prevDisabled = min ? cmp(here, min) <= 0 : false;
   const nextDisabled = max ? cmp(here, max) >= 0 : false;
+  // dayIds are zero-padded ("2026-06-06"), so lexical < is a valid date compare.
+  const minDayId = minDay ? dayId(minDay.year, minDay.month, minDay.day) : null;
 
   const go = (delta: number) => {
     const next = addMonths(year, month, delta);
@@ -101,19 +106,23 @@ export function MiniCalendar({
           if (d === null)
             return <div key={`e${i}`} className="invisible aspect-square" />;
           const id = dayId(year, month, d);
-          const isSel = selected.has(id);
-          const isAdded = !isSel && (added?.has(id) ?? false);
+          const isPast = minDayId !== null && id < minDayId;
+          const isSel = !isPast && selected.has(id);
+          const isAdded = !isSel && !isPast && (added?.has(id) ?? false);
           return (
             <button
               key={id}
               type="button"
+              disabled={isPast}
               onClick={() => onToggleDay(year, month, d)}
               className={`tnum flex aspect-square items-center justify-center rounded-[9px] font-body text-[14px] transition-colors duration-ds ease-ds ${
-                isSel
-                  ? "bg-brand font-semibold text-white hover:bg-brand-hover"
-                  : isAdded
-                    ? "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2"
-                    : "font-medium text-fg1 hover:bg-surface-2"
+                isPast
+                  ? "cursor-not-allowed font-medium text-fg3 opacity-40"
+                  : isSel
+                    ? "bg-brand font-semibold text-white hover:bg-brand-hover"
+                    : isAdded
+                      ? "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2"
+                      : "font-medium text-fg1 hover:bg-surface-2"
               }`}
             >
               {d}

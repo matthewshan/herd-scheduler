@@ -10,6 +10,7 @@ import {
   Field,
   Input,
   MiniCalendar,
+  RequiredMark,
   Select,
   Textarea,
   ThemeToggle,
@@ -35,6 +36,8 @@ export interface CreateFormProps {
   /** Month the calendar opens on (server-computed to avoid hydration drift). */
   initialYear: number;
   initialMonth: number;
+  /** Today's day-of-month (server-computed); earlier days aren't selectable. */
+  initialDay: number;
 }
 
 const startIndex = (label: string) => TIME_OPTS.indexOf(label);
@@ -46,7 +49,11 @@ function byChrono(a: DraftSlot, b: DraftSlot): number {
   return startIndex(a.start) - startIndex(b.start);
 }
 
-export function CreateForm({ initialYear, initialMonth }: CreateFormProps) {
+export function CreateForm({
+  initialYear,
+  initialMonth,
+  initialDay,
+}: CreateFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -73,7 +80,7 @@ export function CreateForm({ initialYear, initialMonth }: CreateFormProps) {
     () => new Set(Object.keys(selected)),
     [selected],
   );
-  const selCount = Object.keys(selected).length;
+  const selCount = selectedKeys.size;
 
   function toggleDay(y: number, m: number, d: number) {
     const key = dayId(y, m, d);
@@ -262,10 +269,7 @@ export function CreateForm({ initialYear, initialMonth }: CreateFormProps) {
 
         <h2 className="ds-h2 mb-2.5 mt-6">
           Pick your dates
-          <span className="text-no" aria-hidden="true">
-            {" "}
-            *
-          </span>
+          <RequiredMark />
         </h2>
 
         <MiniCalendar
@@ -279,6 +283,7 @@ export function CreateForm({ initialYear, initialMonth }: CreateFormProps) {
           added={added}
           onToggleDay={toggleDay}
           min={{ year: initialYear, month: initialMonth }}
+          minDay={{ year: initialYear, month: initialMonth, day: initialDay }}
         />
 
         {/* shared time range applied to the selected days */}

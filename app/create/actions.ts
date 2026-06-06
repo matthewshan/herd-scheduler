@@ -55,7 +55,9 @@ export async function createPoll(
   }
 
   // Convert each picked range to UTC up front so a bad time label fails before
-  // we touch the DB.
+  // we touch the DB. Also reject already-past slots — the calendar disables past
+  // days client-side, so this just backstops a crafted request.
+  const now = new Date();
   let timeOptions: { startTime: Date; endTime: Date; sortOrder: number }[];
   try {
     timeOptions = input.slots.map((slot, i) => {
@@ -75,6 +77,9 @@ export async function createPoll(
       );
       if (endTime <= startTime) {
         throw new Error("End time must be after the start time.");
+      }
+      if (endTime <= now) {
+        throw new Error("Those times are in the past — pick a future date.");
       }
       return { startTime, endTime, sortOrder: i };
     });
