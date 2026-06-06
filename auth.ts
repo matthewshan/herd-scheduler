@@ -22,7 +22,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // created, so blocked / unverified accounts never get an identity.
     async signIn({ user, profile }) {
       // Google sets email_verified on the ID token; reject anything unverified.
-      if (profile && profile.email_verified !== true) return false;
+      // Fail closed: a missing profile (no OAuth identity) never passes the gate.
+      if (profile?.email_verified !== true) return false;
       const email = user.email ?? (profile?.email as string | undefined);
       if (await isEmailBlocked(email)) return false;
       return true;

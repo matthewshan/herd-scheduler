@@ -62,7 +62,9 @@ export async function GET(req: NextRequest) {
   const user = await prisma.user.upsert({
     where: { email },
     create: { email, name, emailVerified: new Date(), isOwner: owner },
-    update: owner ? { isOwner: true } : {},
+    // Keep a returning bypass user verified too (the real signIn gate requires
+    // it); set isOwner when the email matches OWNER_EMAIL.
+    update: { emailVerified: new Date(), ...(owner ? { isOwner: true } : {}) },
   });
   if (owner) {
     await prisma.allowedCreator.upsert({
