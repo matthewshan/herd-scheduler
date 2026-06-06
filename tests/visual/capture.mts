@@ -24,10 +24,9 @@ const OWNER = process.env.OWNER_EMAIL ?? "matthewshan99@gmail.com";
 const OUT_DIR = "docs/screenshots/phase-5";
 const TMP_DIR = ".capture-tmp";
 
-// Mobile-ish phone column; the screens are max-w-[420px]. 2x scale keeps text
-// crisp; we downscale in ffmpeg.
+// Phone-width viewport so the centered max-w-[390px] screens nearly fill the
+// frame. GIF is lightly downscaled from this in ffmpeg.
 const VIEWPORT = { width: 440, height: 920 };
-const SCALE = 2;
 const GIF_WIDTH = 420;
 const FPS = 13;
 
@@ -69,12 +68,11 @@ async function record<T>(
   const videoDir = join(TMP_DIR, name);
   const context = await browser.newContext({
     viewport: VIEWPORT,
-    deviceScaleFactor: SCALE,
     colorScheme,
-    recordVideo: {
-      dir: videoDir,
-      size: { width: VIEWPORT.width * SCALE, height: VIEWPORT.height * SCALE },
-    },
+    // Video size MUST equal the viewport: Chromium records at CSS resolution and
+    // pins the page to the top-left of a larger frame, so an oversized size (e.g.
+    // for deviceScaleFactor) leaves the page in a corner with empty padding.
+    recordVideo: { dir: videoDir, size: VIEWPORT },
   });
   const page = await context.newPage();
   let result: T;
