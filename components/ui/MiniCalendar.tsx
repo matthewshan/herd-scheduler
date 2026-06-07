@@ -37,37 +37,33 @@ function cmp(
   return a.year * 12 + a.month - (b.year * 12 + b.month);
 }
 
-// The four mutually-exclusive visual states a day cell can be in, and the
-// variant classes for each. Kept out of the JSX so the render stays a flat
-// lookup instead of a nested ternary.
-type DayState = "past" | "selected" | "added" | "default";
-
+// Variant classes for the four mutually-exclusive day-cell states. Held in
+// named constants (not bare string tokens) and selected by `dayCellClass` so
+// the render is a flat call instead of a nested ternary.
 const DAY_CELL_BASE =
   "tnum flex aspect-square items-center justify-center rounded-[9px] font-body text-[14px] transition-colors duration-ds ease-ds";
+const DAY_CELL_PAST = "cursor-not-allowed font-medium text-fg3 opacity-40";
+const DAY_CELL_SELECTED =
+  "bg-brand font-semibold text-white hover:bg-brand-hover";
+const DAY_CELL_ADDED =
+  "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2";
+const DAY_CELL_DEFAULT = "font-medium text-fg1 hover:bg-surface-2";
 
-const DAY_CELL_VARIANT: Record<DayState, string> = {
-  past: "cursor-not-allowed font-medium text-fg3 opacity-40",
-  selected: "bg-brand font-semibold text-white hover:bg-brand-hover",
-  added:
-    "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2",
-  default: "font-medium text-fg1 hover:bg-surface-2",
-};
-
-function dayState(opts: {
+function dayCellClass(opts: {
   isPast: boolean;
   isSelected: boolean;
   isAdded: boolean;
-}): DayState {
+}): string {
   if (opts.isPast) {
-    return "past";
+    return DAY_CELL_PAST;
   }
   if (opts.isSelected) {
-    return "selected";
+    return DAY_CELL_SELECTED;
   }
   if (opts.isAdded) {
-    return "added";
+    return DAY_CELL_ADDED;
   }
-  return "default";
+  return DAY_CELL_DEFAULT;
 }
 
 // Month calendar with multi-day selection. Fully driven by props (no baked-in
@@ -143,7 +139,7 @@ export function MiniCalendar({
           const isPast = minDayId !== null && id < minDayId;
           const isSel = !isPast && selected.has(id);
           const isAdded = !isSel && !isPast && (added?.has(id) ?? false);
-          const state = dayState({
+          const cellClass = dayCellClass({
             isPast,
             isSelected: isSel,
             isAdded,
@@ -154,7 +150,7 @@ export function MiniCalendar({
               type="button"
               disabled={isPast}
               onClick={() => onToggleDay(year, month, d)}
-              className={`${DAY_CELL_BASE} ${DAY_CELL_VARIANT[state]}`}
+              className={`${DAY_CELL_BASE} ${cellClass}`}
             >
               {d}
             </button>

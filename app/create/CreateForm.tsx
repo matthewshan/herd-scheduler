@@ -19,7 +19,7 @@ import { TIME_OPTS } from "@/lib/calendar";
 import { TIMEZONES } from "@/lib/time";
 import type { Timezone } from "@prisma/client";
 import { createPoll, type CreatePollSlotInput } from "./actions";
-import { CreateFormStoreProvider, useCreateForm } from "./store-provider";
+import { PollFormStoreProvider, usePollForm } from "./store-provider";
 
 export interface CreateFormProps {
   /** Month the calendar opens on (server-computed to avoid hydration drift). */
@@ -37,11 +37,11 @@ export function CreateForm({
   initialDay,
 }: CreateFormProps) {
   return (
-    <CreateFormStoreProvider
+    <PollFormStoreProvider
       init={{ year: initialYear, month: initialMonth, day: initialDay }}
     >
       <CreateFormView />
-    </CreateFormStoreProvider>
+    </PollFormStoreProvider>
   );
 }
 
@@ -49,7 +49,7 @@ function CreateFormView() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const form = useCreateForm();
+  const form = usePollForm();
   const { patch, toggleDay, addSelected, removeSlot } = form;
 
   const added = useMemo(

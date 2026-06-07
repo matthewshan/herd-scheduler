@@ -29,7 +29,7 @@ function byChrono(a: DraftSlot, b: DraftSlot): number {
 // Server-computed calendar anchor: the month the calendar opens on and today's
 // day-of-month (earlier days aren't selectable). Passed in to avoid hydration
 // drift between server and client.
-export interface CreateFormInit {
+export interface PollFormInit {
   year: number;
   month: number;
   day: number;
@@ -37,7 +37,7 @@ export interface CreateFormInit {
 
 // The plain data the form holds. Everything here is patchable via `patch`; the
 // domain actions below handle the cases that need real logic.
-export interface CreateFormFields {
+export interface PollFormFields {
   // poll meta
   title: string;
   description: string;
@@ -47,7 +47,7 @@ export interface CreateFormFields {
 
   // calendar / working range
   /** Earliest selectable day (fixed at mount); also the calendar's `min`. */
-  initial: CreateFormInit;
+  initial: PollFormInit;
   /** Currently displayed month (calendar nav). */
   year: number;
   month: number;
@@ -65,9 +65,9 @@ export interface CreateFormFields {
   copied: boolean;
 }
 
-export interface CreateFormState extends CreateFormFields {
+export interface PollFormState extends PollFormFields {
   /** Shallow-merge any subset of fields — the one setter for plain values. */
-  patch: (partial: Partial<CreateFormFields>) => void;
+  patch: (partial: Partial<PollFormFields>) => void;
   /** Toggle a calendar day in/out of the pending selection. */
   toggleDay: (year: number, month: number, day: number) => void;
   /** Commit the selected days at the current range into the working set. */
@@ -76,10 +76,10 @@ export interface CreateFormState extends CreateFormFields {
   removeSlot: (key: string) => void;
 }
 
-export type CreateFormStore = ReturnType<typeof createCreateFormStore>;
+export type PollFormStore = ReturnType<typeof createPollFormStore>;
 
-export function createCreateFormStore(init: CreateFormInit) {
-  return createStore<CreateFormState>((set, get) => ({
+export function createPollFormStore(init: PollFormInit) {
+  return createStore<PollFormState>((set, get) => ({
     title: "",
     description: "",
     location: "",
