@@ -37,6 +37,39 @@ function cmp(
   return a.year * 12 + a.month - (b.year * 12 + b.month);
 }
 
+// The four mutually-exclusive visual states a day cell can be in, and the
+// variant classes for each. Kept out of the JSX so the render stays a flat
+// lookup instead of a nested ternary.
+type DayState = "past" | "selected" | "added" | "default";
+
+const DAY_CELL_BASE =
+  "tnum flex aspect-square items-center justify-center rounded-[9px] font-body text-[14px] transition-colors duration-ds ease-ds";
+
+const DAY_CELL_VARIANT: Record<DayState, string> = {
+  past: "cursor-not-allowed font-medium text-fg3 opacity-40",
+  selected: "bg-brand font-semibold text-white hover:bg-brand-hover",
+  added:
+    "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2",
+  default: "font-medium text-fg1 hover:bg-surface-2",
+};
+
+function dayState(opts: {
+  isPast: boolean;
+  isSelected: boolean;
+  isAdded: boolean;
+}): DayState {
+  if (opts.isPast) {
+    return "past";
+  }
+  if (opts.isSelected) {
+    return "selected";
+  }
+  if (opts.isAdded) {
+    return "added";
+  }
+  return "default";
+}
+
 // Month calendar with multi-day selection. Fully driven by props (no baked-in
 // sample months): the parent owns the visible month and the selected set.
 export function MiniCalendar({
@@ -103,27 +136,25 @@ export function MiniCalendar({
           </div>
         ))}
         {cells.map((d, i) => {
-          if (d === null)
+          if (d === null) {
             return <div key={`e${i}`} className="invisible aspect-square" />;
+          }
           const id = dayId(year, month, d);
           const isPast = minDayId !== null && id < minDayId;
           const isSel = !isPast && selected.has(id);
           const isAdded = !isSel && !isPast && (added?.has(id) ?? false);
+          const state = dayState({
+            isPast,
+            isSelected: isSel,
+            isAdded,
+          });
           return (
             <button
               key={id}
               type="button"
               disabled={isPast}
               onClick={() => onToggleDay(year, month, d)}
-              className={`tnum flex aspect-square items-center justify-center rounded-[9px] font-body text-[14px] transition-colors duration-ds ease-ds ${
-                isPast
-                  ? "cursor-not-allowed font-medium text-fg3 opacity-40"
-                  : isSel
-                    ? "bg-brand font-semibold text-white hover:bg-brand-hover"
-                    : isAdded
-                      ? "font-medium text-brand shadow-[inset_0_0_0_1.5px_var(--brand)] hover:bg-surface-2"
-                      : "font-medium text-fg1 hover:bg-surface-2"
-              }`}
+              className={`${DAY_CELL_BASE} ${DAY_CELL_VARIANT[state]}`}
             >
               {d}
             </button>

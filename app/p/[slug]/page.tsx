@@ -10,7 +10,9 @@ interface VotePageProps {
 
 // First name only — the voice refers to the host by first name (design guide).
 function firstName(name: string | null, email: string): string {
-  if (name?.trim()) return name.trim().split(/\s+/)[0];
+  if (name?.trim()) {
+    return name.trim().split(/\s+/)[0];
+  }
   return email.split("@")[0];
 }
 
@@ -28,7 +30,9 @@ export default async function VotePage({ params }: VotePageProps) {
     },
   });
 
-  if (!poll) notFound();
+  if (!poll) {
+    notFound();
+  }
 
   const host = firstName(poll.createdBy.name, poll.createdBy.email);
 

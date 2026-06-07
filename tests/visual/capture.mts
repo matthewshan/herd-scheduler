@@ -13,6 +13,11 @@
  *
  * Pipeline: Playwright records each scenario to webm → ffmpeg builds a palette
  * and converts to a small, sharp GIF in docs/screenshots/phase-5/.
+ *
+ * Why `.mts`: this is a standalone ESM script (top-level `import`s, run via
+ * `tsx`), but the package has no `"type": "module"`, so it defaults to CommonJS.
+ * The `.mts` extension marks this one file as an ES module regardless, so node
+ * and `tsx` resolve it as ESM without flipping the whole package over.
  */
 import { chromium, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";

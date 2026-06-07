@@ -42,7 +42,9 @@ export async function generateUniqueSlug(
       where: { slug: candidate },
       select: { id: true },
     });
-    if (!existing) return candidate;
+    if (!existing) {
+      return candidate;
+    }
   }
   throw new Error(
     `Could not generate a unique slug for "${title}" after ${maxAttempts} attempts`,

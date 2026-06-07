@@ -14,7 +14,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function readEmail(formData: FormData): string | null {
   const raw = formData.get("email");
-  if (typeof raw !== "string") return null;
+  if (typeof raw !== "string") {
+    return null;
+  }
   const email = normalizeEmail(raw);
   return EMAIL_RE.test(email) ? email : null;
 }
@@ -22,7 +24,9 @@ function readEmail(formData: FormData): string | null {
 export async function addCreator(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
 
   await prisma.allowedCreator.upsert({
     where: { email },
@@ -42,9 +46,13 @@ export async function addCreator(formData: FormData): Promise<void> {
 export async function removeCreator(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
   // Never strip the owner's own creator rights.
-  if (isOwnerEmail(email)) return;
+  if (isOwnerEmail(email)) {
+    return;
+  }
 
   await prisma.allowedCreator.deleteMany({ where: { email } });
   await logAction({
@@ -60,9 +68,13 @@ export async function removeCreator(formData: FormData): Promise<void> {
 export async function blockEmail(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
   // The owner can never be locked out.
-  if (isOwnerEmail(email)) return;
+  if (isOwnerEmail(email)) {
+    return;
+  }
 
   const reasonRaw = formData.get("reason");
   const reason =
@@ -87,7 +99,9 @@ export async function blockEmail(formData: FormData): Promise<void> {
 export async function unblockEmail(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
 
   await prisma.blockedEmail.deleteMany({ where: { email } });
   await logAction({

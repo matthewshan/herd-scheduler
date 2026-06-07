@@ -46,7 +46,9 @@ export async function createPoll(
   const user = await requireCreator();
 
   const title = input.title.trim();
-  if (!title) return { ok: false, error: "Add a title for your poll." };
+  if (!title) {
+    return { ok: false, error: "Add a title for your poll." };
+  }
   if (!VALID_TZ.has(input.timezone)) {
     return { ok: false, error: "Pick a timezone." };
   }

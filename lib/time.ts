@@ -83,10 +83,14 @@ export function parseTimeLabel(label: string): {
   minute: number;
 } {
   const m = label.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) throw new Error(`Unrecognized time label: "${label}"`);
+  if (!m) {
+    throw new Error(`Unrecognized time label: "${label}"`);
+  }
   let hour = Number(m[1]) % 12;
   const minute = Number(m[2]);
-  if (m[3].toUpperCase() === "PM") hour += 12;
+  if (m[3].toUpperCase() === "PM") {
+    hour += 12;
+  }
   return { hour, minute };
 }
 

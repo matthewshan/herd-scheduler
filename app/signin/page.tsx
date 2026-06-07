@@ -34,7 +34,9 @@ function GoogleG({ size = 20 }: { size?: number }) {
 
 export default async function SignInPage() {
   const session = await auth();
-  if (session?.user) redirect("/");
+  if (session?.user) {
+    redirect("/");
+  }
 
   async function signInWithGoogle() {
     "use server";

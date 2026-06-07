@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, Check, Copy, Plus, Users, X } from "lucide-react";
 import {
@@ -15,22 +15,11 @@ import {
   Textarea,
   ThemeToggle,
 } from "@/components/ui";
-import { TIME_OPTS, dayId, dayLabel } from "@/lib/calendar";
-import { DEFAULT_TIMEZONE, TIMEZONES } from "@/lib/time";
+import { TIME_OPTS } from "@/lib/calendar";
+import { TIMEZONES } from "@/lib/time";
 import type { Timezone } from "@prisma/client";
 import { createPoll, type CreatePollSlotInput } from "./actions";
-
-// A slot in the working set: the calendar day plus the shared time range. `key`
-// is the dayId so we can ring already-added days on the calendar.
-interface DraftSlot {
-  key: string;
-  year: number;
-  month: number;
-  day: number;
-  label: string;
-  start: string;
-  end: string;
-}
+import { CreateFormStoreProvider, useCreateForm } from "./store-provider";
 
 export interface CreateFormProps {
   /** Month the calendar opens on (server-computed to avoid hydration drift). */
@@ -40,40 +29,62 @@ export interface CreateFormProps {
   initialDay: number;
 }
 
-const startIndex = (label: string) => TIME_OPTS.indexOf(label);
-
-// Order the working set chronologically so the added list and the stored
-// sortOrder match what a voter will later see.
-function byChrono(a: DraftSlot, b: DraftSlot): number {
-  if (a.key !== b.key) return a.key < b.key ? -1 : 1;
-  return startIndex(a.start) - startIndex(b.start);
-}
-
+// The form's transient state lives in a Zustand store (see ./store); this is
+// just the provider boundary that seeds it with the server-computed anchor.
 export function CreateForm({
   initialYear,
   initialMonth,
   initialDay,
 }: CreateFormProps) {
+  return (
+    <CreateFormStoreProvider
+      init={{ year: initialYear, month: initialMonth, day: initialDay }}
+    >
+      <CreateFormView />
+    </CreateFormStoreProvider>
+  );
+}
+
+function CreateFormView() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [timezone, setTimezone] = useState<Timezone>(DEFAULT_TIMEZONE);
-  const [anonymous, setAnonymous] = useState(false);
+  // Poll meta.
+  const title = useCreateForm((s) => s.title);
+  const description = useCreateForm((s) => s.description);
+  const location = useCreateForm((s) => s.location);
+  const timezone = useCreateForm((s) => s.timezone);
+  const anonymous = useCreateForm((s) => s.anonymous);
+  const setTitle = useCreateForm((s) => s.setTitle);
+  const setDescription = useCreateForm((s) => s.setDescription);
+  const setLocation = useCreateForm((s) => s.setLocation);
+  const setTimezone = useCreateForm((s) => s.setTimezone);
+  const toggleAnonymous = useCreateForm((s) => s.toggleAnonymous);
 
-  const [year, setYear] = useState(initialYear);
-  const [month, setMonth] = useState(initialMonth);
-  const [selected, setSelected] = useState<Record<string, DraftSlot>>({});
-  const [rangeStart, setRangeStart] = useState("7:00 PM");
-  const [rangeEnd, setRangeEnd] = useState("10:00 PM");
+  // Calendar / working range.
+  const initial = useCreateForm((s) => s.initial);
+  const year = useCreateForm((s) => s.year);
+  const month = useCreateForm((s) => s.month);
+  const selected = useCreateForm((s) => s.selected);
+  const rangeStart = useCreateForm((s) => s.rangeStart);
+  const rangeEnd = useCreateForm((s) => s.rangeEnd);
+  const navigateMonth = useCreateForm((s) => s.navigateMonth);
+  const toggleDay = useCreateForm((s) => s.toggleDay);
+  const setRangeStart = useCreateForm((s) => s.setRangeStart);
+  const setRangeEnd = useCreateForm((s) => s.setRangeEnd);
+  const addSelected = useCreateForm((s) => s.addSelected);
 
-  const [slots, setSlots] = useState<DraftSlot[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // Working set + status.
+  const slots = useCreateForm((s) => s.slots);
+  const error = useCreateForm((s) => s.error);
+  const removeSlot = useCreateForm((s) => s.removeSlot);
+  const setError = useCreateForm((s) => s.setError);
 
-  const [createdSlug, setCreatedSlug] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Share/success.
+  const createdSlug = useCreateForm((s) => s.createdSlug);
+  const copied = useCreateForm((s) => s.copied);
+  const setCreatedSlug = useCreateForm((s) => s.setCreatedSlug);
+  const setCopied = useCreateForm((s) => s.setCopied);
 
   const added = useMemo(() => new Set(slots.map((s) => s.key)), [slots]);
   const selectedKeys = useMemo(
@@ -81,52 +92,6 @@ export function CreateForm({
     [selected],
   );
   const selCount = selectedKeys.size;
-
-  function toggleDay(y: number, m: number, d: number) {
-    const key = dayId(y, m, d);
-    setSelected((prev) => {
-      const next = { ...prev };
-      if (next[key]) {
-        delete next[key];
-      } else {
-        next[key] = {
-          key,
-          year: y,
-          month: m,
-          day: d,
-          label: dayLabel(y, m, d),
-          start: rangeStart,
-          end: rangeEnd,
-        };
-      }
-      return next;
-    });
-  }
-
-  function addSelected() {
-    if (selCount === 0) return;
-    if (startIndex(rangeEnd) <= startIndex(rangeStart)) {
-      setError("End time must be after the start time.");
-      return;
-    }
-    setError(null);
-    const additions = Object.values(selected).map((s) => ({
-      ...s,
-      start: rangeStart,
-      end: rangeEnd,
-    }));
-    setSlots((prev) => {
-      // Replace any existing slot for the same day with the new range.
-      const keys = new Set(additions.map((a) => a.key));
-      const kept = prev.filter((s) => !keys.has(s.key));
-      return [...kept, ...additions].sort(byChrono);
-    });
-    setSelected({}); // last range persists in rangeStart/rangeEnd (sticky)
-  }
-
-  function removeSlot(key: string) {
-    setSlots((prev) => prev.filter((s) => s.key !== key));
-  }
 
   function submit() {
     setError(null);
@@ -155,7 +120,9 @@ export function CreateForm({
   }
 
   function copyLink() {
-    if (!createdSlug) return;
+    if (createdSlug === null) {
+      return;
+    }
     const url = `${window.location.origin}/p/${createdSlug}`;
     navigator.clipboard?.writeText(url);
     setCopied(true);
@@ -163,7 +130,7 @@ export function CreateForm({
   }
 
   // ---------- success / share state ----------
-  if (createdSlug) {
+  if (createdSlug !== null) {
     const shareUrl =
       typeof window !== "undefined"
         ? `${window.location.origin}/p/${createdSlug}`
@@ -275,15 +242,12 @@ export function CreateForm({
         <MiniCalendar
           year={year}
           month={month}
-          onNavigate={(y, m) => {
-            setYear(y);
-            setMonth(m);
-          }}
+          onNavigate={navigateMonth}
           selected={selectedKeys}
           added={added}
           onToggleDay={toggleDay}
-          min={{ year: initialYear, month: initialMonth }}
-          minDay={{ year: initialYear, month: initialMonth, day: initialDay }}
+          min={{ year: initial.year, month: initial.month }}
+          minDay={initial}
         />
 
         {/* shared time range applied to the selected days */}
@@ -380,7 +344,7 @@ export function CreateForm({
             role="switch"
             aria-checked={anonymous}
             aria-label="Anonymous responses"
-            onClick={() => setAnonymous((v) => !v)}
+            onClick={toggleAnonymous}
             className={`relative h-[26px] w-[44px] flex-shrink-0 rounded-full transition-colors duration-ds ease-ds ${
               anonymous ? "bg-brand" : "bg-surface-2"
             }`}

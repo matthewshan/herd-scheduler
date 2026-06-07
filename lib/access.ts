@@ -21,7 +21,9 @@ export function isAllowlistEnabled(): boolean {
 /** The single owner, identified by OWNER_EMAIL — independent of the DB flag. */
 export function isOwnerEmail(email: string | null | undefined): boolean {
   const owner = process.env.OWNER_EMAIL;
-  if (!owner || !email) return false;
+  if (!owner || !email) {
+    return false;
+  }
   return normalizeEmail(email) === normalizeEmail(owner);
 }
 
@@ -29,7 +31,9 @@ export function isOwnerEmail(email: string | null | undefined): boolean {
 export async function isEmailBlocked(
   email: string | null | undefined,
 ): Promise<boolean> {
-  if (!email) return false;
+  if (!email) {
+    return false;
+  }
   const hit = await prisma.blockedEmail.findUnique({
     where: { email: normalizeEmail(email) },
   });
@@ -43,12 +47,20 @@ export async function isEmailBlocked(
 export async function canCreatePolls(
   email: string | null | undefined,
 ): Promise<boolean> {
-  if (!email) return false;
+  if (!email) {
+    return false;
+  }
   // Owner first: the owner can never be locked out (matches the BlockedEmail
   // invariant and requireOwner), so check ownership before the blocklist.
-  if (isOwnerEmail(email)) return true;
-  if (await isEmailBlocked(email)) return false;
-  if (!isAllowlistEnabled()) return true;
+  if (isOwnerEmail(email)) {
+    return true;
+  }
+  if (await isEmailBlocked(email)) {
+    return false;
+  }
+  if (!isAllowlistEnabled()) {
+    return true;
+  }
   const allowed = await prisma.allowedCreator.findUnique({
     where: { email: normalizeEmail(email) },
   });

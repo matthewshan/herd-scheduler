@@ -19,7 +19,9 @@ export function initTheme(): Theme {
   } catch {
     // localStorage unavailable (private mode, etc.) — fall through to OS pref.
   }
-  if (stored === "light" || stored === "dark") return stored;
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
   const prefersDark =
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-color-scheme: dark)").matches;

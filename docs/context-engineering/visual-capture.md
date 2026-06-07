@@ -24,6 +24,11 @@ The same idea as a written spec: invest a little to make the *next* read cheap.
 | Capture driver (Playwright → ffmpeg) | `tests/visual/capture.mts` |
 | Run script | `pnpm capture:visual` |
 | Output GIFs (per phase) | `docs/screenshots/phase-<n>/*.gif` |
+| Operational checklist (Claude Code skill) | `.claude/skills/visual-capture/` (`/visual-capture`) |
+
+> This page is the rationale and reference. The step-by-step run/add-a-scenario
+> checklist is also packaged as the **`/visual-capture`** skill so it's invocable
+> in Claude Code.
 
 ## The pipeline
 

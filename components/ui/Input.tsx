@@ -22,11 +22,11 @@ const fieldClass = (err?: boolean) =>
  * The red required marker. `aria-hidden` because required fields carry the
  * semantics via `aria-required`/`required` on the control itself — the asterisk
  * is a visual cue only. Shared so labels and section headings stay identical.
+ * The gap from the preceding text is a `ml-0.5` margin, not a literal space.
  */
 export function RequiredMark() {
   return (
-    <span className="text-no" aria-hidden="true">
-      {" "}
+    <span className="ml-0.5 text-no" aria-hidden="true">
       *
     </span>
   );
