@@ -35,16 +35,18 @@ export interface CreateFormInit {
   day: number;
 }
 
-export interface CreateFormState {
-  // ----- poll meta -----
+// The plain data the form holds. Everything here is patchable via `patch`; the
+// domain actions below handle the cases that need real logic.
+export interface CreateFormFields {
+  // poll meta
   title: string;
   description: string;
   location: string;
   timezone: Timezone;
   anonymous: boolean;
 
-  // ----- calendar / working range -----
-  /** The earliest selectable day (fixed at mount); also the calendar's `min`. */
+  // calendar / working range
+  /** Earliest selectable day (fixed at mount); also the calendar's `min`. */
   initial: CreateFormInit;
   /** Currently displayed month (calendar nav). */
   year: number;
@@ -54,29 +56,24 @@ export interface CreateFormState {
   rangeStart: string;
   rangeEnd: string;
 
-  // ----- committed working set -----
+  // committed working set
   slots: DraftSlot[];
   error: string | null;
 
-  // ----- share/success -----
+  // share/success
   createdSlug: string | null;
   copied: boolean;
+}
 
-  // ----- actions -----
-  setTitle: (v: string) => void;
-  setDescription: (v: string) => void;
-  setLocation: (v: string) => void;
-  setTimezone: (v: Timezone) => void;
-  toggleAnonymous: () => void;
-  navigateMonth: (year: number, month: number) => void;
+export interface CreateFormState extends CreateFormFields {
+  /** Shallow-merge any subset of fields — the one setter for plain values. */
+  patch: (partial: Partial<CreateFormFields>) => void;
+  /** Toggle a calendar day in/out of the pending selection. */
   toggleDay: (year: number, month: number, day: number) => void;
-  setRangeStart: (v: string) => void;
-  setRangeEnd: (v: string) => void;
+  /** Commit the selected days at the current range into the working set. */
   addSelected: () => void;
+  /** Drop a committed slot. */
   removeSlot: (key: string) => void;
-  setError: (v: string | null) => void;
-  setCreatedSlug: (v: string | null) => void;
-  setCopied: (v: boolean) => void;
 }
 
 export type CreateFormStore = ReturnType<typeof createCreateFormStore>;
@@ -102,13 +99,7 @@ export function createCreateFormStore(init: CreateFormInit) {
     createdSlug: null,
     copied: false,
 
-    setTitle: (title) => set({ title }),
-    setDescription: (description) => set({ description }),
-    setLocation: (location) => set({ location }),
-    setTimezone: (timezone) => set({ timezone }),
-    toggleAnonymous: () => set((s) => ({ anonymous: !s.anonymous })),
-
-    navigateMonth: (year, month) => set({ year, month }),
+    patch: (partial) => set(partial),
 
     toggleDay: (year, month, day) => {
       const key = dayId(year, month, day);
@@ -129,9 +120,6 @@ export function createCreateFormStore(init: CreateFormInit) {
       }
       set({ selected: next });
     },
-
-    setRangeStart: (rangeStart) => set({ rangeStart }),
-    setRangeEnd: (rangeEnd) => set({ rangeEnd }),
 
     addSelected: () => {
       const { selected, rangeStart, rangeEnd, slots } = get();
@@ -159,9 +147,5 @@ export function createCreateFormStore(init: CreateFormInit) {
 
     removeSlot: (key) =>
       set((s) => ({ slots: s.slots.filter((slot) => slot.key !== key) })),
-
-    setError: (error) => set({ error }),
-    setCreatedSlug: (createdSlug) => set({ createdSlug }),
-    setCopied: (copied) => set({ copied }),
   }));
 }

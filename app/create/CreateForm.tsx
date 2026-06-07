@@ -49,53 +49,22 @@ function CreateFormView() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Poll meta.
-  const title = useCreateForm((s) => s.title);
-  const description = useCreateForm((s) => s.description);
-  const location = useCreateForm((s) => s.location);
-  const timezone = useCreateForm((s) => s.timezone);
-  const anonymous = useCreateForm((s) => s.anonymous);
-  const setTitle = useCreateForm((s) => s.setTitle);
-  const setDescription = useCreateForm((s) => s.setDescription);
-  const setLocation = useCreateForm((s) => s.setLocation);
-  const setTimezone = useCreateForm((s) => s.setTimezone);
-  const toggleAnonymous = useCreateForm((s) => s.toggleAnonymous);
+  const form = useCreateForm();
+  const { patch, toggleDay, addSelected, removeSlot } = form;
 
-  // Calendar / working range.
-  const initial = useCreateForm((s) => s.initial);
-  const year = useCreateForm((s) => s.year);
-  const month = useCreateForm((s) => s.month);
-  const selected = useCreateForm((s) => s.selected);
-  const rangeStart = useCreateForm((s) => s.rangeStart);
-  const rangeEnd = useCreateForm((s) => s.rangeEnd);
-  const navigateMonth = useCreateForm((s) => s.navigateMonth);
-  const toggleDay = useCreateForm((s) => s.toggleDay);
-  const setRangeStart = useCreateForm((s) => s.setRangeStart);
-  const setRangeEnd = useCreateForm((s) => s.setRangeEnd);
-  const addSelected = useCreateForm((s) => s.addSelected);
-
-  // Working set + status.
-  const slots = useCreateForm((s) => s.slots);
-  const error = useCreateForm((s) => s.error);
-  const removeSlot = useCreateForm((s) => s.removeSlot);
-  const setError = useCreateForm((s) => s.setError);
-
-  // Share/success.
-  const createdSlug = useCreateForm((s) => s.createdSlug);
-  const copied = useCreateForm((s) => s.copied);
-  const setCreatedSlug = useCreateForm((s) => s.setCreatedSlug);
-  const setCopied = useCreateForm((s) => s.setCopied);
-
-  const added = useMemo(() => new Set(slots.map((s) => s.key)), [slots]);
+  const added = useMemo(
+    () => new Set(form.slots.map((s) => s.key)),
+    [form.slots],
+  );
   const selectedKeys = useMemo(
-    () => new Set(Object.keys(selected)),
-    [selected],
+    () => new Set(Object.keys(form.selected)),
+    [form.selected],
   );
   const selCount = selectedKeys.size;
 
   function submit() {
-    setError(null);
-    const payload: CreatePollSlotInput[] = slots.map((s) => ({
+    patch({ error: null });
+    const payload: CreatePollSlotInput[] = form.slots.map((s) => ({
       year: s.year,
       month: s.month,
       day: s.day,
@@ -104,37 +73,37 @@ function CreateFormView() {
     }));
     startTransition(async () => {
       const res = await createPoll({
-        title,
-        description,
-        location,
-        timezone,
-        anonymousVoting: anonymous,
+        title: form.title,
+        description: form.description,
+        location: form.location,
+        timezone: form.timezone,
+        anonymousVoting: form.anonymous,
         slots: payload,
       });
       if (res.ok) {
-        setCreatedSlug(res.slug);
+        patch({ createdSlug: res.slug });
       } else {
-        setError(res.error);
+        patch({ error: res.error });
       }
     });
   }
 
   function copyLink() {
-    if (createdSlug === null) {
+    if (form.createdSlug === null) {
       return;
     }
-    const url = `${window.location.origin}/p/${createdSlug}`;
+    const url = `${window.location.origin}/p/${form.createdSlug}`;
     navigator.clipboard?.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
+    patch({ copied: true });
+    setTimeout(() => patch({ copied: false }), 1600);
   }
 
   // ---------- success / share state ----------
-  if (createdSlug !== null) {
+  if (form.createdSlug !== null) {
     const shareUrl =
       typeof window !== "undefined"
-        ? `${window.location.origin}/p/${createdSlug}`
-        : `/p/${createdSlug}`;
+        ? `${window.location.origin}/p/${form.createdSlug}`
+        : `/p/${form.createdSlug}`;
     return (
       <>
         <AppBar title="Poll created" backHref="/" right={<ThemeToggle />} />
@@ -145,10 +114,10 @@ function CreateFormView() {
                 <Check size={18} />
               </span>
               <span className="text-left font-body text-[13px] text-fg2">
-                <b className="text-fg1">{title.trim()}</b>
+                <b className="text-fg1">{form.title.trim()}</b>
                 <br />
-                {slots.length} {slots.length === 1 ? "time" : "times"} · ready
-                to share
+                {form.slots.length} {form.slots.length === 1 ? "time" : "times"}{" "}
+                · ready to share
               </span>
             </div>
 
@@ -161,8 +130,8 @@ function CreateFormView() {
                 {shareUrl}
               </span>
               <Button size="sm" onClick={copyLink}>
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-                {copied ? "Copied" : "Copy link"}
+                {form.copied ? <Check size={16} /> : <Copy size={16} />}
+                {form.copied ? "Copied" : "Copy link"}
               </Button>
             </div>
           </div>
@@ -171,7 +140,7 @@ function CreateFormView() {
             variant="ghost"
             block
             className="mt-3.5"
-            onClick={() => router.push(`/p/${createdSlug}`)}
+            onClick={() => router.push(`/p/${form.createdSlug}`)}
           >
             <Users size={18} />
             View responses
@@ -182,7 +151,8 @@ function CreateFormView() {
   }
 
   // ---------- build form ----------
-  const canSubmit = title.trim().length > 0 && slots.length > 0 && !isPending;
+  const canSubmit =
+    form.title.trim().length > 0 && form.slots.length > 0 && !isPending;
 
   return (
     <>
@@ -192,8 +162,8 @@ function CreateFormView() {
         <Field label="Title" htmlFor="poll-title" required>
           <Input
             id="poll-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            value={form.title}
+            onChange={(e) => patch({ title: e.target.value })}
             placeholder="e.g. Game night"
             required
             aria-required
@@ -204,8 +174,8 @@ function CreateFormView() {
           <Textarea
             id="poll-desc"
             rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            value={form.description}
+            onChange={(e) => patch({ description: e.target.value })}
             placeholder="What's the plan?"
           />
         </Field>
@@ -213,8 +183,8 @@ function CreateFormView() {
         <Field label="Location" htmlFor="poll-loc" optional>
           <Input
             id="poll-loc"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
+            value={form.location}
+            onChange={(e) => patch({ location: e.target.value })}
             placeholder="Add a place"
           />
         </Field>
@@ -222,8 +192,8 @@ function CreateFormView() {
         <Field label="Timezone" htmlFor="poll-tz" required>
           <Select
             id="poll-tz"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value as Timezone)}
+            value={form.timezone}
+            onChange={(e) => patch({ timezone: e.target.value as Timezone })}
             aria-required
           >
             {TIMEZONES.map((tz) => (
@@ -240,14 +210,14 @@ function CreateFormView() {
         </h2>
 
         <MiniCalendar
-          year={year}
-          month={month}
-          onNavigate={navigateMonth}
+          year={form.year}
+          month={form.month}
+          onNavigate={(year, month) => patch({ year, month })}
           selected={selectedKeys}
           added={added}
           onToggleDay={toggleDay}
-          min={{ year: initial.year, month: initial.month }}
-          minDay={initial}
+          min={{ year: form.initial.year, month: form.initial.month }}
+          minDay={form.initial}
         />
 
         {/* shared time range applied to the selected days */}
@@ -256,8 +226,8 @@ function CreateFormView() {
             Time
           </span>
           <Select
-            value={rangeStart}
-            onChange={(e) => setRangeStart(e.target.value)}
+            value={form.rangeStart}
+            onChange={(e) => patch({ rangeStart: e.target.value })}
             aria-label="Start time"
             className="flex-1"
           >
@@ -267,8 +237,8 @@ function CreateFormView() {
           </Select>
           <span className="font-body text-[13px] font-medium text-fg2">to</span>
           <Select
-            value={rangeEnd}
-            onChange={(e) => setRangeEnd(e.target.value)}
+            value={form.rangeEnd}
+            onChange={(e) => patch({ rangeEnd: e.target.value })}
             aria-label="End time"
             className="flex-1"
           >
@@ -288,23 +258,24 @@ function CreateFormView() {
           <Plus size={18} />
           {selCount === 0
             ? "Add to your poll"
-            : `Add ${selCount} ${selCount === 1 ? "day" : "days"} at ${rangeStart}`}
+            : `Add ${selCount} ${selCount === 1 ? "day" : "days"} at ${form.rangeStart}`}
         </Button>
 
         <p className="mt-2 flex items-center justify-center gap-1.5 font-body text-[12.5px] text-fg3">
           <Calendar size={14} />
           {selCount === 0
             ? "Tap days above — pick several at once."
-            : `${selCount} selected · uses ${rangeStart}–${rangeEnd}`}
+            : `${selCount} selected · uses ${form.rangeStart}–${form.rangeEnd}`}
         </p>
 
-        {slots.length > 0 && (
+        {form.slots.length > 0 && (
           <>
             <h2 className="ds-h2 mb-2.5 mt-6">
-              {slots.length} time {slots.length === 1 ? "slot" : "slots"} added
+              {form.slots.length} time{" "}
+              {form.slots.length === 1 ? "slot" : "slots"} added
             </h2>
             <div className="flex flex-col gap-2">
-              {slots.map((s) => (
+              {form.slots.map((s) => (
                 <div
                   key={s.key}
                   className="flex items-center gap-3 rounded-card border border-border bg-surface px-[14px] py-2.5"
@@ -342,24 +313,24 @@ function CreateFormView() {
           <button
             type="button"
             role="switch"
-            aria-checked={anonymous}
+            aria-checked={form.anonymous}
             aria-label="Anonymous responses"
-            onClick={toggleAnonymous}
+            onClick={() => patch({ anonymous: !form.anonymous })}
             className={`relative h-[26px] w-[44px] flex-shrink-0 rounded-full transition-colors duration-ds ease-ds ${
-              anonymous ? "bg-brand" : "bg-surface-2"
+              form.anonymous ? "bg-brand" : "bg-surface-2"
             }`}
           >
             <span
               className={`absolute top-[3px] h-5 w-5 rounded-full bg-white shadow-sh-1 transition-[left] duration-ds ease-ds ${
-                anonymous ? "left-[21px]" : "left-[3px]"
+                form.anonymous ? "left-[21px]" : "left-[3px]"
               }`}
             />
           </button>
         </div>
 
-        {error && (
+        {form.error && (
           <p className="border-no/30 mt-3 rounded-input border bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
-            {error}
+            {form.error}
           </p>
         )}
 

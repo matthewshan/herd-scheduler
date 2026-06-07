@@ -35,12 +35,15 @@ export function CreateFormStoreProvider({
   );
 }
 
-export function useCreateForm<T>(selector: (state: CreateFormState) => T): T {
+// Returns the whole form store (fields + actions). This is a single form that
+// touches most of its state, so subscribing to everything and patching via
+// `patch` is simpler than — and as correct as — a wall of per-field selectors.
+export function useCreateForm(): CreateFormState {
   const store = useContext(CreateFormStoreContext);
   if (store === null) {
     throw new Error(
       "useCreateForm must be used within CreateFormStoreProvider",
     );
   }
-  return useStore(store, selector);
+  return useStore(store);
 }
