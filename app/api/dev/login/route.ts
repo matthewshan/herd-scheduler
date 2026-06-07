@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  AUDIT_ACTIONS,
   isEmailBlocked,
   isOwnerEmail,
   logAction,
@@ -52,10 +53,7 @@ export async function GET(req: NextRequest) {
 
   // Mirror the real signIn gate so the blocklist is testable through here too.
   if (await isEmailBlocked(email)) {
-    return NextResponse.json(
-      { error: "email is blocked" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "email is blocked" }, { status: 403 });
   }
 
   const owner = isOwnerEmail(email);
@@ -81,7 +79,7 @@ export async function GET(req: NextRequest) {
   });
 
   await logAction({
-    action: "signin",
+    action: AUDIT_ACTIONS.signin,
     actorUserId: user.id,
     actorEmail: email,
     metadata: { via: "dev-login" },

@@ -27,8 +27,8 @@ describe("slugify", () => {
 });
 
 describe("makeSlug", () => {
-  it("appends a 5-char lowercase-alphanumeric suffix", () => {
-    expect(makeSlug("Game Night")).toMatch(/^game-night-[0-9a-z]{5}$/);
+  it("appends an 8-char lowercase-alphanumeric suffix", () => {
+    expect(makeSlug("Game Night")).toMatch(/^game-night-[0-9a-z]{8}$/);
   });
 
   it("produces a distinct suffix across calls", () => {

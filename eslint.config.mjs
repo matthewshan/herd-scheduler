@@ -12,6 +12,13 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript", "prettier"),
   {
+    rules: {
+      // Always brace control statements — no single-line `if (x) return;`.
+      // Keeps bodies unambiguous and diff-friendly (project code standard).
+      curly: ["error", "all"],
+    },
+  },
+  {
     ignores: [
       ".next/**",
       "node_modules/**",

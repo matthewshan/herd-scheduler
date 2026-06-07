@@ -24,3 +24,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# visual-capture scratch (webm frames; GIFs are committed under docs/)
+/.capture-tmp

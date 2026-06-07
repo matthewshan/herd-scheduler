@@ -66,9 +66,13 @@ export function daysInMonth(year: number, month: number): number {
 export function buildMonthGrid(year: number, month: number): (number | null)[] {
   const cells: (number | null)[] = [];
   const lead = firstDayOfWeek(year, month);
-  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let i = 0; i < lead; i++) {
+    cells.push(null);
+  }
   const total = daysInMonth(year, month);
-  for (let d = 1; d <= total; d++) cells.push(d);
+  for (let d = 1; d <= total; d++) {
+    cells.push(d);
+  }
   return cells;
 }
 

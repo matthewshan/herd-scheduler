@@ -28,7 +28,7 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 - **Create poll** with: title, description (optional), location (optional), timezone (5-zone picker — ET / CT / MT / PT / GMT — defaults to ET), an integrated **month calendar to multi-select days at once**, and a shared start/end **time-range picker** (30-minute preset dropdown) that becomes the default for the next add — so a host can rapidly tile slots across many days.
 - **Per-poll anonymity toggle** at create time. Default: voters' names and avatars are visible on the Results screen. When anonymous, results show aggregate counts only.
 - Times displayed with a timezone chip (e.g. "Times shown in Eastern Time · ET") on every screen that lists times.
-- Share poll via link (no login required to vote). URL shape: `/p/{slug}` where slug = `kebab(title) + "-" + random5` (e.g. `game-night-x9f2`).
+- Share poll via link (no login required to vote). URL shape: `/p/{slug}` where slug = `kebab(title) + "-" + random8` (e.g. `game-night-x9f2`).
 - **Vote per slot** via a 3-way segmented control: **Yes / If-need-be / No**. Tapping the currently-selected segment clears the vote back to "not marked".
 - **Guest voting** (display name only) with an **inline Google sign-in** affordance on the same screen — a guest can convert to a logged-in voter without leaving the vote page.
 - **Sticky bottom bar** with `N of M marked` progress + a primary Submit; success state collapses to a "Saved — you can update anytime" toast.
@@ -64,7 +64,7 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 | Fonts | **Space Grotesk** (500/700) for display/heading; **Inter** (400/500/600) for body — self-hosted via `next/font`. | Tabular figures required on all clock times. Self-hosting keeps the container offline-capable. |
 | Dates/TZ | **`date-fns` + `date-fns-tz`** (or Luxon) | Reliable UTC↔tz conversion and timezone labels. |
 | Data layer | React Server Components + Server Actions | Keeps the API surface small; no separate backend needed for MVP. |
-| Slug generation | `slugify` + `nanoid(5)` | `kebab(title) + "-" + nanoid(5)` is human-recognizable and unguessable enough for §9. |
+| Slug generation | `slugify` + `nanoid(8)` | `kebab(title) + "-" + nanoid(8)` is human-recognizable and unguessable enough for §9. |
 
 **Alternative considered (database):** MongoDB would work, but the data here is strongly relational — Polls→TimeOptions, Participants→Votes, and a many-to-many between participants and slots. Foreign keys/cascading deletes, joins, and `GROUP BY` aggregations (counting Yes/No/If-need-be per slot) are native in Postgres and have to be hand-rolled or `$lookup`-ed in Mongo. Mongo wins for fluid/nested/denormalized-at-scale data, which this isn't. Any Postgres works — managed or self-hosted.
 
@@ -178,7 +178,7 @@ The Vote screen exposes an **inline "Sign in" link** next to the guest name inpu
 - **Availability** — id, participantId, timeOptionId, response (`yes` | `no` | `ifneedbe`). Rows are only persisted for non-null responses; the absence of a row means "not marked" (so tapping a selected segment to clear deletes the row).
 
 Notes:
-- `slug` is unique; generation = `slugify(title) + "-" + nanoid(5)`. Retry on collision.
+- `slug` is unique; generation = `slugify(title) + "-" + nanoid(8)`. Retry on collision.
 - When `anonymousVoting = true`, the Results API returns aggregate counts only — never per-voter rows or avatar stacks.
 - All times stored in **UTC**. Displayed in the poll's timezone (Eastern by default) with a visible timezone chip everywhere times appear. A per-viewer "show in my local time" toggle is a Phase 2 nicety.
 
@@ -227,7 +227,7 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 ### Keep it out of search engines
 - Send `X-Robots-Tag: noindex, nofollow` on every response, plus a `<meta name="robots" content="noindex,nofollow">` fallback. Stronger than `robots.txt`, which only asks polite crawlers and doesn't actually prevent indexing.
 - No `sitemap.xml`, no inbound links from any public site.
-- **Unguessable poll slugs** (`kebab(title) + "-" + nanoid(5)`) so URLs can't be enumerated.
+- **Unguessable poll slugs** (`kebab(title) + "-" + nanoid(8)`) so URLs can't be enumerated.
 
 ### Vote authorship visibility
 - **Per-poll setting**, configurable by the creator at poll creation. Default: visible (avatar stacks + names on Results).
@@ -258,4 +258,4 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 1. **Email provider** when notifications land in Phase 2 — Resend, SES, SMTP?
 2. **Mutability of the anonymity setting** after votes already exist. Default proposal: lock it once any vote is cast (otherwise it would retroactively reveal or hide identities a voter assumed were private/public when they responded).
 
-*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo; optional allowlist via `ALLOWLIST_ENABLED` (default on); reactive email blocklist; owner-only audit log + viewer; `email_verified` sign-in gate; per-poll/per-creator size caps deferred to Phase 8.
+*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(8)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo; optional allowlist via `ALLOWLIST_ENABLED` (default on); reactive email blocklist; owner-only audit log + viewer; `email_verified` sign-in gate; per-poll/per-creator size caps deferred to Phase 8.
