@@ -74,6 +74,9 @@ async function record<T>(
   const context = await browser.newContext({
     viewport: VIEWPORT,
     colorScheme,
+    // The share screen copies the poll link to the clipboard; grant the
+    // permission so the capture doesn't trip an unhandled clipboard rejection.
+    permissions: ["clipboard-write"],
     // Video size MUST equal the viewport: Chromium records at CSS resolution and
     // pins the page to the top-left of a larger frame, so an oversized size (e.g.
     // for deviceScaleFactor) leaves the page in a corner with empty padding.

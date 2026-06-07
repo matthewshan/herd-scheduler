@@ -102,7 +102,9 @@ function CreateFormView({ store }: CreateFormViewProps) {
       return;
     }
     const url = `${window.location.origin}/p/${form.createdSlug}`;
-    navigator.clipboard?.writeText(url);
+    // writeText rejects when the clipboard is blocked (insecure origin, denied
+    // permission, headless) — swallow it so it isn't an unhandled rejection.
+    void navigator.clipboard?.writeText(url).catch(() => {});
     patch({ copied: true });
     setTimeout(() => patch({ copied: false }), 1600);
   }
