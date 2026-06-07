@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Visual capture (context engineering):** front-end flows are recorded as optimized GIFs via Playwright → ffmpeg (`tests/visual/capture.mts`, `pnpm capture:visual`), output to `docs/screenshots/phase-<n>/`. The workflow — including the dev-login bypass it uses and how to add per-phase scenarios — is documented in `docs/context-engineering/visual-capture.md`. Requires the app running against a migrated Postgres with `ENABLE_DEV_LOGIN=true`, plus `ffmpeg` and `npx playwright install chromium`.
 
+> **Always ship a GIF with front-end work.** Any change that adds or alters a user-facing screen or flow must include a captured GIF of that flow, committed under `docs/screenshots/phase-<n>/` and embedded in the PR description (a comparison GIF, when behaviour changes). Add a `record(...)` scenario for new flows rather than hand-recording, so the media stays cheap to refresh — see `docs/context-engineering/visual-capture.md`. A front-end PR without its GIF isn't done.
+
 Package manager is **pnpm** (pinned via `packageManager` in `package.json`; `.npmrc` sets `node-linker=hoisted` so the standalone build and Prisma engine resolve). Commands (run from repo root):
 
 - `pnpm install` — installs deps; `postinstall` runs `prisma generate`.
@@ -74,6 +76,7 @@ Per `docs/plans/initial-tech-spec.md` §3 — the next scaffolding step lands th
 - **Slug format:** `kebab(title) + "-" + nanoid(8)` (e.g. `game-night-x9f2`). Unique constraint; retry on collision.
 - **Voice:** sentence case everywhere, peer-to-peer, address user as "you", refer to the host by first name. The design bundle's README has the full content guide.
 - **TypeScript conventions:** follow `docs/typescript-standards.md` — notably, component props are declared as named `interface`s (never inline object-type literals), `type` is reserved for unions/aliases, and native-element wrappers extend the matching `*HTMLAttributes` type.
+- **Front-end work ships with a GIF.** Every PR that adds or changes a user-facing screen/flow must include a captured GIF of it (committed under `docs/screenshots/phase-<n>/`, embedded in the PR description) via the `pnpm capture:visual` pipeline — see the "Visual capture" note above and `docs/context-engineering/visual-capture.md`.
 
 ## Working with the tech spec
 

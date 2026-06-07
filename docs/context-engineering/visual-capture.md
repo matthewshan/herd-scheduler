@@ -107,3 +107,12 @@ The shareable `/p/{slug}` page the link resolves to (Phase 6 adds voting here):
 The create form in dark mode:
 
 ![Create form, dark](../screenshots/phase-5/create-dark.gif)
+
+## Phase 6 — vote flow (guest)
+
+The guest vote path: open a shared poll link, name yourself, mark availability per
+slot on the 3-way segmented control, and submit to the "Saved" toast. Recorded in
+a fresh (unauthenticated) context, so the name field and inline Google sign-in are
+both visible — the path most voters take.
+
+![Vote flow](../screenshots/phase-6/vote-flow.gif)
