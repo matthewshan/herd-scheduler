@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useTransition } from "react";
+import { useMemo, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useStore } from "zustand";
 import { Calendar, Check, Copy, Plus, Users, X } from "lucide-react";
 import {
   AppBar,
@@ -19,7 +20,7 @@ import { TIME_OPTS } from "@/lib/calendar";
 import { TIMEZONES } from "@/lib/time";
 import type { Timezone } from "@prisma/client";
 import { createPoll, type CreatePollSlotInput } from "./actions";
-import { PollFormStoreProvider, usePollForm } from "./store-provider";
+import { createPollFormStore, type PollFormStore } from "./store";
 
 export interface CreateFormProps {
   /** Month the calendar opens on (server-computed to avoid hydration drift). */
@@ -29,27 +30,35 @@ export interface CreateFormProps {
   initialDay: number;
 }
 
-// The form's transient state lives in a Zustand store (see ./store); this is
-// just the provider boundary that seeds it with the server-computed anchor.
+// The form's transient state lives in a Zustand store (see ./store). We create
+// it once per mount (SSR-safe — not a module-level singleton shared across
+// requests) seeded with the server-computed calendar anchor, and hand it to the
+// single consumer by prop. No context needed while there's one consumer.
 export function CreateForm({
   initialYear,
   initialMonth,
   initialDay,
 }: CreateFormProps) {
-  return (
-    <PollFormStoreProvider
-      init={{ year: initialYear, month: initialMonth, day: initialDay }}
-    >
-      <CreateFormView />
-    </PollFormStoreProvider>
-  );
+  const storeRef = useRef<PollFormStore | null>(null);
+  if (storeRef.current === null) {
+    storeRef.current = createPollFormStore({
+      year: initialYear,
+      month: initialMonth,
+      day: initialDay,
+    });
+  }
+  return <CreateFormView store={storeRef.current} />;
 }
 
-function CreateFormView() {
+interface CreateFormViewProps {
+  store: PollFormStore;
+}
+
+function CreateFormView({ store }: CreateFormViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const form = usePollForm();
+  const form = useStore(store);
   const { patch, toggleDay, addSelected, removeSlot } = form;
 
   const added = useMemo(
