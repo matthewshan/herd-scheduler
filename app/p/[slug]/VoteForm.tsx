@@ -15,6 +15,7 @@ import {
   TzChip,
   type VoteValue,
 } from "@/components/ui";
+import { LIMITS } from "@/lib/limits";
 import { submitVote, signInToVote } from "./actions";
 
 // One candidate time, pre-formatted in the poll's zone (server-side, via
@@ -292,6 +293,7 @@ export function VoteForm({
                 error={showNameErr}
                 aria-label="Your name"
                 aria-required
+                maxLength={LIMITS.guestName}
                 className="flex-1"
               />
               <form action={signInToVote.bind(null, slug)}>

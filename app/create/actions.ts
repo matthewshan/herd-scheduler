@@ -6,6 +6,7 @@ import { requireCreator } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
 import { generateUniqueSlug } from "@/lib/slug";
 import { TIMEZONES, zonedWallTimeToUtc } from "@/lib/time";
+import { LIMITS, withinLimit } from "@/lib/limits";
 import { saveBallot, type Ballot } from "@/lib/votes";
 
 // One picked slot from the create form: a calendar day (month 0-indexed, to match
@@ -50,11 +51,17 @@ export async function createPoll(
   if (!title) {
     return { ok: false, error: "Add a title for your poll." };
   }
+  if (!withinLimit(title, LIMITS.title)) {
+    return { ok: false, error: `Keep the title under ${LIMITS.title} characters.` };
+  }
   if (!VALID_TZ.has(input.timezone)) {
     return { ok: false, error: "Pick a timezone." };
   }
   if (input.slots.length === 0) {
     return { ok: false, error: "Add at least one time." };
+  }
+  if (input.slots.length > LIMITS.slots) {
+    return { ok: false, error: `Pick at most ${LIMITS.slots} times.` };
   }
 
   // Convert each picked range to UTC up front so a bad time label fails before
@@ -94,7 +101,19 @@ export async function createPoll(
   }
 
   const description = input.description?.trim() || null;
+  if (description && !withinLimit(description, LIMITS.description)) {
+    return {
+      ok: false,
+      error: `Keep the description under ${LIMITS.description} characters.`,
+    };
+  }
   const location = input.location?.trim() || null;
+  if (location && !withinLimit(location, LIMITS.location)) {
+    return {
+      ok: false,
+      error: `Keep the location under ${LIMITS.location} characters.`,
+    };
+  }
 
   const slug = await generateUniqueSlug(title);
   const poll = await prisma.poll.create({

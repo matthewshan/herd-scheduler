@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { saveBallot } from "@/lib/votes";
 import { logAction, AUDIT_ACTIONS } from "@/lib/access";
+import { LIMITS } from "@/lib/limits";
 import { submitVote } from "./actions";
 
 const pollFindUnique = vi.mocked(prisma.poll.findUnique);
@@ -93,6 +94,16 @@ describe("submitVote — guest name gate", () => {
     expect(saveBallotMock).toHaveBeenCalledWith(
       expect.objectContaining({ identity: { guestName: "Sam" } }),
     );
+  });
+
+  it("rejects an over-long guest name (input-size cap)", async () => {
+    const res = await submitVote({
+      slug: "x",
+      guestName: "a".repeat(LIMITS.guestName + 1),
+      votes: { s1: "yes" },
+    });
+    expect(res.ok).toBe(false);
+    expect(saveBallotMock).not.toHaveBeenCalled();
   });
 
   it("ignores guestName and keys on userId when signed in", async () => {
