@@ -25,6 +25,10 @@ import type { CreatorPollRow } from "@/lib/polls";
 
 export type CreatorHomeVariant = "list" | "empty" | "noncreator";
 
+// Duration of the delete card's collapse+fade. Kept as a constant so the CSS
+// transition and the "refresh after it lands" timer can't drift apart.
+const DELETE_ANIM_MS = 480;
+
 export interface CreatorHomeProps {
   firstName: string;
   isOwner: boolean;
@@ -262,7 +266,10 @@ export function CreatorHome({
         setConfirmingSlug(null);
         setDeletingSlug(null);
         setRemovedSlugs((cur) => new Set(cur).add(slug));
-        setTimeout(() => router.refresh(), 280);
+        // Wait for the collapse+fade to finish before re-fetching, so the row
+        // settles out gracefully instead of snapping mid-animation. Stays a
+        // touch longer than the card's transition (see DELETE_ANIM_MS).
+        setTimeout(() => router.refresh(), DELETE_ANIM_MS + 60);
       } else {
         setDeleteError(res.error);
         setDeletingSlug(null);
@@ -333,7 +340,8 @@ export function CreatorHome({
             return (
               <div
                 key={p.slug}
-                className={`grid transition-all duration-300 ease-ds ${
+                style={{ transitionDuration: `${DELETE_ANIM_MS}ms` }}
+                className={`grid transition-all ease-ds ${
                   removed
                     ? "grid-rows-[0fr] scale-[0.97] opacity-0"
                     : "grid-rows-[1fr] scale-100 opacity-100"
