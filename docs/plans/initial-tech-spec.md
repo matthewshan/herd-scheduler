@@ -12,7 +12,7 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 - **Unindexed / private (decided: Model A).** Not discoverable by search engines (noindex headers, unguessable slugs, no sitemap). The poll link is shareable and loadable by anyone who has it — guest voting stays. See §9.
 - **Optional login.** Voting works without an account; creating polls requires login + being allowlisted.
 - **Owner-controlled poll creation.** Only emails you approve can create polls.
-- **Portable by design.** Ships as a standard container image deployable to any container runtime (Docker, k3s, Cloud Run, Fly, ECS, a VM…) and connects to any PostgreSQL via `DATABASE_URL`. Vercel + Supabase is one supported reference setup, not a hard dependency. See §4.
+- **Portable by design.** Ships as a standard container image deployable to any container runtime (Docker, k3s, Cloud Run, Fly, ECS, a VM…) and connects to any PostgreSQL via `DATABASE_URL`. The home deployment is self-hosted **k3s + LAN Postgres + Cloudflare Tunnel** (§4 Reference C); Vercel + Supabase is another supported setup, not a hard dependency. See §4.
 - **Default timezone: US Eastern (`America/New_York`)**, with the active timezone shown clearly in the UI. Poll creators pick from a fixed list of five zones (ET / CT / MT / PT / GMT).
 - **Mobile-first.** Most voting happens on phones; design target is a ~390px frame.
 - **Dark mode is first-class.** Light + dark themes with a toggle on every screen, `localStorage` persistence, and `prefers-color-scheme` fallback. Tokens for both themes already live in `docs/design/Herd Scheduler/colors_and_type.css`.
@@ -72,7 +72,7 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 
 ## 4. Deployment & Portability
 
-**Design principle: runs anywhere.** The app ships as a standard container image and talks to any PostgreSQL over a single connection string. No piece depends on a specific host or DB provider — Vercel + Supabase is just one of the reference setups below.
+**Design principle: runs anywhere.** The app ships as a standard container image and talks to any PostgreSQL over a single connection string. No piece depends on a specific host or DB provider. The **home deployment** (Reference C) is a self-hosted **k3s** cluster with Postgres on the private LAN, the image served from `ghcr.io`, and public HTTPS via **Cloudflare Tunnel**; Vercel + Supabase (Reference B) and a plain container runtime (Reference A) remain supported, proving nothing host-specific crept in.
 
 ### Portability rules we hold to
 - **One container image.** Next.js `output: 'standalone'` + a multi-stage Dockerfile produce a self-contained server (`node server.js`) that runs on Docker, k3s, Cloud Run, Fly, ECS, Render, or a plain VM — anywhere an OCI image runs.
@@ -119,12 +119,41 @@ The same image drops into k3s (Deployment + Service + Ingress) or any managed co
 ### Reference deployment B — Vercel + Supabase (serverless)
 Also supported, with one wrinkle: serverless functions open many short-lived connections, so use Supabase's **pooled** connection (port `6543`, `?pgbouncer=true&connection_limit=1`) for `DATABASE_URL` and the **direct** connection (`5432`) as Prisma's `directUrl` for migrations. On a long-running container you don't need this — Prisma pools internally against a direct `DATABASE_URL`.
 
+### Reference deployment C — self-hosted k3s + LAN Postgres (the home deployment)
+The actual production target. Same portable image, no app changes — only ops wiring, all of it
+standard, host-agnostic Kubernetes. The cluster owner manages the manifests; this section fixes the
+**shape** of the deployment so the moving parts agree.
+
+- **Image distribution — GitHub Container Registry (`ghcr.io`).** A GitHub Actions workflow builds the
+  `Dockerfile` image and pushes it to `ghcr.io/<owner>/herd-scheduler:<tag>` on release/merge. The
+  cluster pulls it via an `imagePullSecret` (or a public package). No in-cluster build.
+- **Database — Postgres on the private LAN, outside the cluster.** Pods reach it over the single
+  `DATABASE_URL=postgres://…@<lan-host>:5432/scheduler`. It's a **direct** connection, so Prisma pools
+  internally and `DIRECT_URL` stays unset (the Reference B pooler wrinkle doesn't apply). Optionally a
+  headless `Service` + `Endpoints` gives the LAN host a stable in-cluster DNS name. The k3s nodes need a
+  network route to that host — trivial when they share the LAN.
+- **Public HTTPS — Cloudflare Tunnel.** `cloudflared` (run in-cluster or alongside it) publishes the
+  app's `Service` to a public domain, with **TLS terminating at Cloudflare's edge**. This satisfies
+  Google OAuth's https-redirect requirement *without* port-forwarding, opening firewall ports, or an
+  in-cluster cert issuer (no cert-manager / Let's Encrypt needed). The app speaks plain HTTP inside the
+  cluster; Cloudflare fronts it.
+- **OAuth wiring.** `AUTH_URL` = the public Cloudflare domain (`https://…`). Because a proxy terminates
+  TLS, set **`AUTH_TRUST_HOST=true`** (already the default we ship). Register
+  `<AUTH_URL>/api/auth/callback/google` as the authorized redirect URI in Google Cloud Console.
+- **Migrations.** `prisma migrate deploy` runs as a one-shot **pre-deploy `Job` / init container** against
+  the LAN Postgres (Phase 8) — the app container itself only runs `node server.js`.
+- **Config & secrets.** A `Secret` holds `DATABASE_URL`, `AUTH_SECRET`, and the Google client
+  credentials; a `ConfigMap` holds the rest (`AUTH_URL`, `AUTH_TRUST_HOST`, `OWNER_EMAIL`,
+  `ALLOWLIST_ENABLED`, `APP_TIMEZONE`). Standard `Deployment` + `Service`; the Cloudflare Tunnel replaces
+  a conventional `Ingress`.
+
 ### Env vars (all deployments)
 ```
 DATABASE_URL=          # any Postgres connection string
 DIRECT_URL=            # optional; only when DATABASE_URL points at a pooler (migrations)
 AUTH_SECRET=           # Auth.js session signing
 AUTH_URL=              # public base URL of this deployment (set explicitly)
+AUTH_TRUST_HOST=true   # required off-Vercel / behind a TLS-terminating proxy (e.g. Cloudflare Tunnel)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 OWNER_EMAIL=           # bootstrap admin/allowlist owner; gets isOwner + admin access in any mode
@@ -136,7 +165,7 @@ APP_TIMEZONE=America/New_York
 ### Scheduled tasks
 Keep them portable: expose poll auto-close as a plain authenticated endpoint or a CLI command, triggered by whatever scheduler the host has (k8s `CronJob`, system cron, Vercel Cron…). None required for MVP.
 
-> **Gotcha (OAuth):** register an authorized redirect URI per deployed domain in the Google Cloud Console, and set `AUTH_URL` to match. Platforms with rotating preview URLs (e.g. Vercel) should test auth on a stable domain.
+> **Gotcha (OAuth):** register an authorized redirect URI per deployed domain in the Google Cloud Console, and set `AUTH_URL` to match. Platforms with rotating preview URLs (e.g. Vercel) should test auth on a stable domain. Behind a TLS-terminating proxy (Cloudflare Tunnel, Reference C), `AUTH_URL` is the public **https** domain and `AUTH_TRUST_HOST=true` is required so Auth.js validates the callback against that origin rather than the internal HTTP host.
 
 ---
 
@@ -262,4 +291,4 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
    - **First-writer-wins lock.** Keep name-keying but reject a resubmit whose cookie token doesn't match the original ("this name is taken on this poll"). Simpler but invites name-squatting.
    - **Push toward sign-in.** Make guest voting best-effort/ephemeral and nudge sign-in for anything editable. Lowest effort, weakest fix — probably not sufficient alone.
 
-*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(8)`; preset 30-min time dropdown; inline Google sign-in on Vote screen (in-progress votes preserved across the OAuth round-trip via a per-slug `localStorage` draft, restored on return); vote rows stored only for marked slots (tap-to-clear / unmarked deletes the row); resubmitting reuses the same participant (no duplicate rows); email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo; optional allowlist via `ALLOWLIST_ENABLED` (default on); reactive email blocklist; owner-only audit log + viewer; `email_verified` sign-in gate; per-poll/per-creator size caps deferred to Phase 8.
+*Resolved:* rename to Herd Scheduler with cat brand mark; dark mode in MVP; per-poll anonymity (default visible); multi-select calendar create flow with sticky last-range; best-fit scoring `yes*3 + maybe - no*4`; fixed 5-zone timezone picker (ET / CT / MT / PT / GMT, ET default); tap-to-clear on segmented control; slug = `kebab(title) + "-" + nanoid(5)`; preset 30-min time dropdown; inline Google sign-in on Vote screen; email notifications stay Phase 2; portable container + any Postgres (Vercel/Supabase as one reference setup); portability proven via `docker build` (the committed `docker-compose.yml` is dev-only: a local Postgres on port 5432, app runs on the host); unindexed/Model A privacy; no Google Calendar; manual finalize with best-fit highlighting; Postgres over Mongo; optional allowlist via `ALLOWLIST_ENABLED` (default on); reactive email blocklist; owner-only audit log + viewer; `email_verified` sign-in gate; per-poll/per-creator size caps deferred to Phase 8; home deployment target = self-hosted k3s + Postgres on the private LAN + image from `ghcr.io` + public HTTPS via Cloudflare Tunnel (§4 Reference C; Vercel/Supabase and plain container runtime stay supported reference setups).
