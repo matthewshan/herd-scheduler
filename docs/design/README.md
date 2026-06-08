@@ -120,7 +120,7 @@ Root files:
 - **`fonts/`** — font documentation + substitution note (`fonts/README.md`).
 - **`assets/`** — brand mark + iconography notes (`assets/README.md`).
 - **`preview/`** — individual Design System cards (type specimens, color palettes, spacing/radii/shadow tokens, components). These populate the Design System tab.
-- **`ui_kits/herd-scheduler/`** — the interactive, mobile-first prototype: Vote, Results, Create-poll, plus Sign-in & Admin. See its own `README.md`.
+- **`ui_kits/herd-scheduler/`** — the interactive, mobile-first prototype: My polls (creator home), Vote, Results, Create-poll, plus Sign-in & Admin. See its own `README.md`.
 
 ## Sample data (use verbatim in mocks)
 

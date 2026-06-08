@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
 import {
+  AUDIT_ACTIONS,
   isEmailBlocked,
   isOwnerEmail,
   logAction,
@@ -60,7 +61,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
       }
       await logAction({
-        action: "signin",
+        action: AUDIT_ACTIONS.signin,
         actorUserId: user.id,
         actorEmail: user.email,
       });

@@ -16,7 +16,7 @@ function SignInScreen({ go }) {
           Find a night the whole herd can make — no group-chat chaos.
         </p>
         <div style={{ width: '100%', marginTop: 8 }}>
-          <button className="google-btn" onClick={() => go('create')}>
+          <button className="google-btn" onClick={() => go('mypolls')}>
             <GoogleG size={20} />Continue with Google
           </button>
           <button className="link" onClick={() => go('vote')} style={{ marginTop: 18, justifyContent: 'center', width: '100%' }}>

@@ -1,0 +1,201 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "ui_kits/herd-scheduler/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Space Grotesk|Inter))/i]",
+        "message": "Font not provided by the design system. Available: Space Grotesk, Inter."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--appbar-bg",
+      "--bg",
+      "--border",
+      "--border-strong",
+      "--bottombar-bg",
+      "--brand",
+      "--brand-hover",
+      "--brand-tint",
+      "--dur",
+      "--ease",
+      "--fg1",
+      "--fg2",
+      "--fg3",
+      "--font-body",
+      "--font-display",
+      "--frame-canvas",
+      "--input-bg",
+      "--maybe",
+      "--maybe-ink",
+      "--maybe-tint",
+      "--no",
+      "--no-ink",
+      "--no-tint",
+      "--phone-bezel-1",
+      "--phone-bezel-2",
+      "--r-btn",
+      "--r-card",
+      "--r-input",
+      "--r-pill",
+      "--s-1",
+      "--s-2",
+      "--s-3",
+      "--s-4",
+      "--s-5",
+      "--s-6",
+      "--s-7",
+      "--s-8",
+      "--scrim",
+      "--sh-1",
+      "--sh-2",
+      "--sh-3",
+      "--sh-brand",
+      "--surface",
+      "--surface-2",
+      "--t-body",
+      "--t-body-lh",
+      "--t-body-w",
+      "--t-display",
+      "--t-display-lh",
+      "--t-display-w",
+      "--t-h1",
+      "--t-h1-lh",
+      "--t-h1-w",
+      "--t-h2",
+      "--t-h2-lh",
+      "--t-h2-w",
+      "--t-label",
+      "--t-label-lh",
+      "--t-label-w",
+      "--t-meta",
+      "--t-meta-lh",
+      "--t-meta-w",
+      "--t-micro",
+      "--t-micro-lh",
+      "--t-micro-w",
+      "--tnum",
+      "--yes",
+      "--yes-ink",
+      "--yes-tint"
+    ],
+    "tokenKinds": {
+      "--bg": "color",
+      "--surface": "color",
+      "--surface-2": "color",
+      "--border": "color",
+      "--border-strong": "color",
+      "--fg1": "color",
+      "--fg2": "color",
+      "--fg3": "color",
+      "--brand": "color",
+      "--brand-hover": "color",
+      "--brand-tint": "color",
+      "--yes": "color",
+      "--yes-tint": "color",
+      "--maybe": "color",
+      "--maybe-tint": "color",
+      "--no": "color",
+      "--no-tint": "color",
+      "--yes-ink": "color",
+      "--maybe-ink": "color",
+      "--no-ink": "color",
+      "--frame-canvas": "color",
+      "--appbar-bg": "color",
+      "--bottombar-bg": "color",
+      "--input-bg": "color",
+      "--scrim": "color",
+      "--phone-bezel-1": "color",
+      "--phone-bezel-2": "color",
+      "--font-display": "font",
+      "--font-body": "font",
+      "--tnum": "font",
+      "--t-display": "spacing",
+      "--t-display-lh": "spacing",
+      "--t-display-w": "font",
+      "--t-h1": "spacing",
+      "--t-h1-lh": "spacing",
+      "--t-h1-w": "font",
+      "--t-h2": "spacing",
+      "--t-h2-lh": "spacing",
+      "--t-h2-w": "font",
+      "--t-body": "spacing",
+      "--t-body-lh": "spacing",
+      "--t-body-w": "font",
+      "--t-label": "spacing",
+      "--t-label-lh": "spacing",
+      "--t-label-w": "font",
+      "--t-meta": "spacing",
+      "--t-meta-lh": "spacing",
+      "--t-meta-w": "font",
+      "--t-micro": "spacing",
+      "--t-micro-lh": "spacing",
+      "--t-micro-w": "font",
+      "--s-1": "spacing",
+      "--s-2": "spacing",
+      "--s-3": "spacing",
+      "--s-4": "spacing",
+      "--s-5": "spacing",
+      "--s-6": "spacing",
+      "--s-7": "spacing",
+      "--s-8": "spacing",
+      "--r-card": "spacing",
+      "--r-btn": "spacing",
+      "--r-input": "spacing",
+      "--r-pill": "spacing",
+      "--sh-1": "shadow",
+      "--sh-2": "shadow",
+      "--sh-3": "shadow",
+      "--sh-brand": "shadow",
+      "--ease": "other",
+      "--dur": "other"
+    },
+    "fontFamilies": [
+      "Inter",
+      "Space Grotesk"
+    ]
+  }
+}

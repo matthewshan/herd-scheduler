@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- @dsCard group="UI Kit — Herd Scheduler" name="Herd Scheduler — UI Kit" subtitle="Interactive prototype: Vote, Results, Create (calendar), Sign-in, Admin · light + dark" viewport="760x880" -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -16,6 +17,7 @@
 <script type="text/babel" src="Icons.jsx"></script>
 <script type="text/babel" src="Shared.jsx"></script>
 <script type="text/babel" src="Calendar.jsx"></script>
+<script type="text/babel" src="MyPollsScreen.jsx"></script>
 <script type="text/babel" src="VoteScreen.jsx"></script>
 <script type="text/babel" src="ResultsScreen.jsx"></script>
 <script type="text/babel" src="CreateScreen.jsx"></script>
@@ -25,6 +27,7 @@ const { useState } = React;
 initTheme();
 
 const SCREENS = [
+  { key: 'mypolls', label: 'My polls' },
   { key: 'vote',    label: 'Vote' },
   { key: 'results', label: 'Results' },
   { key: 'create',  label: 'Create' },
@@ -32,14 +35,22 @@ const SCREENS = [
   { key: 'admin',   label: 'Admin' },
 ];
 
+const MYPOLLS_STATES = [
+  { key: 'has',   label: '◆ Has polls' },
+  { key: 'empty', label: '◇ Empty' },
+  { key: 'guest', label: '◇ Not a creator' },
+];
+
 function App() {
-  const [screen, setScreen] = useState('vote');
+  const [screen, setScreen] = useState('mypolls');
   const [isHost, setIsHost] = useState(true);
+  const [pollsVariant, setPollsVariant] = useState('has');
   const go = (s) => setScreen(s);
 
   return (
     <div className="canvas">
       <Phone>
+        {screen === 'mypolls' && <MyPollsScreen go={go} variant={pollsVariant} />}
         {screen === 'vote'    && <VoteScreen go={go} />}
         {screen === 'results' && <ResultsScreen go={go} isHost={isHost} />}
         {screen === 'create'  && <CreateScreen go={go} />}
@@ -54,6 +65,11 @@ function App() {
         {screen === 'results' && (
           <button onClick={() => setIsHost(h => !h)} style={{ color: isHost ? 'var(--brand)' : 'var(--fg2)' }}>
             {isHost ? '◆ Host view' : '◇ Viewer'}
+          </button>
+        )}
+        {screen === 'mypolls' && (
+          <button onClick={() => setPollsVariant(v => { const i = MYPOLLS_STATES.findIndex(x => x.key === v); return MYPOLLS_STATES[(i + 1) % MYPOLLS_STATES.length].key; })} style={{ color: pollsVariant === 'has' ? 'var(--brand)' : 'var(--fg2)' }}>
+            {MYPOLLS_STATES.find(x => x.key === pollsVariant).label}
           </button>
         )}
         <ThemeToggle />

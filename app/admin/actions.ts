@@ -3,13 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/auth";
-import { isOwnerEmail, logAction, normalizeEmail } from "@/lib/access";
+import {
+  AUDIT_ACTIONS,
+  isOwnerEmail,
+  logAction,
+  normalizeEmail,
+} from "@/lib/access";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function readEmail(formData: FormData): string | null {
   const raw = formData.get("email");
-  if (typeof raw !== "string") return null;
+  if (typeof raw !== "string") {
+    return null;
+  }
   const email = normalizeEmail(raw);
   return EMAIL_RE.test(email) ? email : null;
 }
@@ -17,7 +24,9 @@ function readEmail(formData: FormData): string | null {
 export async function addCreator(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
 
   await prisma.allowedCreator.upsert({
     where: { email },
@@ -25,7 +34,7 @@ export async function addCreator(formData: FormData): Promise<void> {
     update: {},
   });
   await logAction({
-    action: "creator.add",
+    action: AUDIT_ACTIONS.creatorAdd,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -37,13 +46,17 @@ export async function addCreator(formData: FormData): Promise<void> {
 export async function removeCreator(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
   // Never strip the owner's own creator rights.
-  if (isOwnerEmail(email)) return;
+  if (isOwnerEmail(email)) {
+    return;
+  }
 
   await prisma.allowedCreator.deleteMany({ where: { email } });
   await logAction({
-    action: "creator.remove",
+    action: AUDIT_ACTIONS.creatorRemove,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -55,9 +68,13 @@ export async function removeCreator(formData: FormData): Promise<void> {
 export async function blockEmail(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
   // The owner can never be locked out.
-  if (isOwnerEmail(email)) return;
+  if (isOwnerEmail(email)) {
+    return;
+  }
 
   const reasonRaw = formData.get("reason");
   const reason =
@@ -69,7 +86,7 @@ export async function blockEmail(formData: FormData): Promise<void> {
     update: { reason },
   });
   await logAction({
-    action: "email.block",
+    action: AUDIT_ACTIONS.emailBlock,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
@@ -82,11 +99,13 @@ export async function blockEmail(formData: FormData): Promise<void> {
 export async function unblockEmail(formData: FormData): Promise<void> {
   const owner = await requireOwner();
   const email = readEmail(formData);
-  if (!email) return;
+  if (!email) {
+    return;
+  }
 
   await prisma.blockedEmail.deleteMany({ where: { email } });
   await logAction({
-    action: "email.unblock",
+    action: AUDIT_ACTIONS.emailUnblock,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",

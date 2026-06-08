@@ -18,7 +18,9 @@ export interface SessionUser {
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth();
   const user = session?.user;
-  if (!user?.email) return null;
+  if (!user?.email) {
+    return null;
+  }
   return {
     id: user.id,
     email: user.email,
@@ -35,8 +37,12 @@ export async function getSessionUser(): Promise<SessionUser | null> {
  */
 export async function requireOwner(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect("/signin");
-  if (!(user.isOwner || isOwnerEmail(user.email))) redirect("/");
+  if (!user) {
+    redirect("/signin");
+  }
+  if (!(user.isOwner || isOwnerEmail(user.email))) {
+    redirect("/");
+  }
   return user;
 }
 
@@ -48,7 +54,11 @@ export async function requireOwner(): Promise<SessionUser> {
  */
 export async function requireCreator(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect("/signin");
-  if (!(await canCreatePolls(user.email))) redirect("/");
+  if (!user) {
+    redirect("/signin");
+  }
+  if (!(await canCreatePolls(user.email))) {
+    redirect("/");
+  }
   return user;
 }

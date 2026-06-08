@@ -21,7 +21,9 @@ export function isAllowlistEnabled(): boolean {
 /** The single owner, identified by OWNER_EMAIL — independent of the DB flag. */
 export function isOwnerEmail(email: string | null | undefined): boolean {
   const owner = process.env.OWNER_EMAIL;
-  if (!owner || !email) return false;
+  if (!owner || !email) {
+    return false;
+  }
   return normalizeEmail(email) === normalizeEmail(owner);
 }
 
@@ -29,7 +31,9 @@ export function isOwnerEmail(email: string | null | undefined): boolean {
 export async function isEmailBlocked(
   email: string | null | undefined,
 ): Promise<boolean> {
-  if (!email) return false;
+  if (!email) {
+    return false;
+  }
   const hit = await prisma.blockedEmail.findUnique({
     where: { email: normalizeEmail(email) },
   });
@@ -43,20 +47,55 @@ export async function isEmailBlocked(
 export async function canCreatePolls(
   email: string | null | undefined,
 ): Promise<boolean> {
-  if (!email) return false;
+  if (!email) {
+    return false;
+  }
   // Owner first: the owner can never be locked out (matches the BlockedEmail
   // invariant and requireOwner), so check ownership before the blocklist.
-  if (isOwnerEmail(email)) return true;
-  if (await isEmailBlocked(email)) return false;
-  if (!isAllowlistEnabled()) return true;
+  if (isOwnerEmail(email)) {
+    return true;
+  }
+  if (await isEmailBlocked(email)) {
+    return false;
+  }
+  if (!isAllowlistEnabled()) {
+    return true;
+  }
   const allowed = await prisma.allowedCreator.findUnique({
     where: { email: normalizeEmail(email) },
   });
   return allowed !== null;
 }
 
+/**
+ * Single source of truth for audit action names (spec §5). Both the `logAction`
+ * writers and the `/admin` filter dropdown derive from this, so the dropdown
+ * can never drift from what's actually logged. Add new actions here only.
+ */
+export const AUDIT_ACTIONS = {
+  signin: "signin",
+  pollCreate: "poll.create",
+  pollUpdate: "poll.update",
+  pollClose: "poll.close",
+  pollFinalize: "poll.finalize",
+  pollDelete: "poll.delete",
+  voteCast: "vote.cast",
+  voteUpdate: "vote.update",
+  creatorAdd: "creator.add",
+  creatorRemove: "creator.remove",
+  emailBlock: "email.block",
+  emailUnblock: "email.unblock",
+} as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+
+/** All action strings in admin-filter order (derived — do not hand-maintain). */
+export const AUDIT_ACTION_VALUES = Object.values(
+  AUDIT_ACTIONS,
+) as AuditAction[];
+
 export interface LogActionInput {
-  action: string;
+  action: AuditAction;
   actorUserId?: string | null;
   actorEmail?: string | null;
   guestName?: string | null;

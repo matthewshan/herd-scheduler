@@ -1,0 +1,151 @@
+import { createStore } from "zustand/vanilla";
+import type { Timezone } from "@prisma/client";
+import { TIME_OPTS, dayId, dayLabel } from "@/lib/calendar";
+import { DEFAULT_TIMEZONE } from "@/lib/time";
+
+// A slot in the working set: the calendar day plus the shared time range. `key`
+// is the dayId so we can ring already-added days on the calendar.
+export interface DraftSlot {
+  key: string;
+  year: number;
+  month: number;
+  day: number;
+  label: string;
+  start: string;
+  end: string;
+}
+
+const startIndex = (label: string) => TIME_OPTS.indexOf(label);
+
+// Order the working set chronologically so the added list and the stored
+// sortOrder match what a voter will later see.
+function byChrono(a: DraftSlot, b: DraftSlot): number {
+  if (a.key !== b.key) {
+    return a.key < b.key ? -1 : 1;
+  }
+  return startIndex(a.start) - startIndex(b.start);
+}
+
+// Server-computed calendar anchor: the month the calendar opens on and today's
+// day-of-month (earlier days aren't selectable). Passed in to avoid hydration
+// drift between server and client.
+export interface PollFormInit {
+  year: number;
+  month: number;
+  day: number;
+}
+
+// The plain data the form holds. Everything here is patchable via `patch`; the
+// domain actions below handle the cases that need real logic.
+export interface PollFormFields {
+  // poll meta
+  title: string;
+  description: string;
+  location: string;
+  timezone: Timezone;
+  anonymous: boolean;
+
+  // calendar / working range
+  /** Earliest selectable day (fixed at mount); also the calendar's `min`. */
+  initial: PollFormInit;
+  /** Currently displayed month (calendar nav). */
+  year: number;
+  month: number;
+  /** Days toggled on but not yet added, keyed by dayId. */
+  selected: Record<string, DraftSlot>;
+  rangeStart: string;
+  rangeEnd: string;
+
+  // committed working set
+  slots: DraftSlot[];
+  error: string | null;
+
+  // share/success
+  createdSlug: string | null;
+  copied: boolean;
+}
+
+export interface PollFormState extends PollFormFields {
+  /** Shallow-merge any subset of fields — the one setter for plain values. */
+  patch: (partial: Partial<PollFormFields>) => void;
+  /** Toggle a calendar day in/out of the pending selection. */
+  toggleDay: (year: number, month: number, day: number) => void;
+  /** Commit the selected days at the current range into the working set. */
+  addSelected: () => void;
+  /** Drop a committed slot. */
+  removeSlot: (key: string) => void;
+}
+
+export type PollFormStore = ReturnType<typeof createPollFormStore>;
+
+export function createPollFormStore(init: PollFormInit) {
+  return createStore<PollFormState>((set, get) => ({
+    title: "",
+    description: "",
+    location: "",
+    timezone: DEFAULT_TIMEZONE,
+    anonymous: false,
+
+    initial: init,
+    year: init.year,
+    month: init.month,
+    selected: {},
+    rangeStart: "7:00 PM",
+    rangeEnd: "10:00 PM",
+
+    slots: [],
+    error: null,
+
+    createdSlug: null,
+    copied: false,
+
+    patch: (partial) => set(partial),
+
+    toggleDay: (year, month, day) => {
+      const key = dayId(year, month, day);
+      const { selected, rangeStart, rangeEnd } = get();
+      const next = { ...selected };
+      if (next[key]) {
+        delete next[key];
+      } else {
+        next[key] = {
+          key,
+          year,
+          month,
+          day,
+          label: dayLabel(year, month, day),
+          start: rangeStart,
+          end: rangeEnd,
+        };
+      }
+      set({ selected: next });
+    },
+
+    addSelected: () => {
+      const { selected, rangeStart, rangeEnd, slots } = get();
+      if (Object.keys(selected).length === 0) {
+        return;
+      }
+      if (startIndex(rangeEnd) <= startIndex(rangeStart)) {
+        set({ error: "End time must be after the start time." });
+        return;
+      }
+      const additions = Object.values(selected).map((s) => ({
+        ...s,
+        start: rangeStart,
+        end: rangeEnd,
+      }));
+      // Replace any existing slot for the same day with the new range.
+      const keys = new Set(additions.map((a) => a.key));
+      const kept = slots.filter((s) => !keys.has(s.key));
+      set({
+        error: null,
+        slots: [...kept, ...additions].sort(byChrono),
+        selected: {}, // last range persists in rangeStart/rangeEnd (sticky)
+      });
+    },
+
+    removeSlot: (key) =>
+      set((s) => ({ slots: s.slots.filter((slot) => slot.key !== key) })),
+  }));
+}

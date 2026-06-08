@@ -1,7 +1,11 @@
 import { Ban, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/auth";
-import { isAllowlistEnabled, isOwnerEmail } from "@/lib/access";
+import {
+  AUDIT_ACTION_VALUES,
+  isAllowlistEnabled,
+  isOwnerEmail,
+} from "@/lib/access";
 import {
   AppBar,
   Avatar,
@@ -15,22 +19,6 @@ import { addCreator, blockEmail, removeCreator, unblockEmail } from "./actions";
 export const metadata = {
   title: "Manage access — Herd Scheduler",
 };
-
-// The actions worth filtering the audit log by (matches logAction call sites).
-const AUDIT_ACTIONS = [
-  "signin",
-  "poll.create",
-  "poll.update",
-  "poll.close",
-  "poll.finalize",
-  "poll.delete",
-  "vote.cast",
-  "vote.update",
-  "creator.add",
-  "creator.remove",
-  "email.block",
-  "email.unblock",
-];
 
 // Render audit timestamps in a fixed display zone so they read the same no
 // matter what timezone the container runs in. Configurable via APP_TIMEZONE
@@ -243,7 +231,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               className="flex-1"
             >
               <option value="">All actions</option>
-              {AUDIT_ACTIONS.map((a) => (
+              {AUDIT_ACTION_VALUES.map((a) => (
                 <option key={a} value={a}>
                   {a}
                 </option>

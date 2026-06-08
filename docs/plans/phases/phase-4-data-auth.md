@@ -60,7 +60,7 @@ Phase 1 (Prisma + Auth.js installed). Independent of Phases 2–3, so it can run
     actor identity even for `anonymousVoting` polls (owner-only, trusted); the Results API must never
     derive voter identity from `AuditLog`.
 - **Sign-in screen** wired to the Google provider (from the prototype's `SignInScreen`).
-- **Slug helper:** `slugify(title) + "-" + nanoid(5)` (e.g. `game-night-x9f2`), unique constraint, **retry
+- **Slug helper:** `slugify(title) + "-" + nanoid(8)` (e.g. `game-night-x9f2`), unique constraint, **retry
   on collision**. Expose as a reusable utility for Phase 5.
 
 ## Files to create / touch
@@ -94,7 +94,7 @@ Phase 1 (Prisma + Auth.js installed). Independent of Phases 2–3, so it can run
 - Owner can add/remove creators, block/unblock emails, and browse the audit log; non-owners cannot reach
   `/admin`.
 - `signin`, `creator.add/remove`, and `email.block/unblock` actions appear in the audit viewer.
-- `slug` helper produces `kebab(title)-nanoid(5)` and retries on a forced collision.
+- `slug` helper produces `kebab(title)-nanoid(8)` and retries on a forced collision.
 - `prisma migrate deploy` applies cleanly against a fresh Postgres.
 
 ## Out of scope

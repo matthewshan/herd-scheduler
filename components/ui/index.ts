@@ -12,7 +12,14 @@ export { Segmented } from "./Segmented";
 export type { VoteValue } from "./Segmented";
 export { Button } from "./Button";
 export type { ButtonVariant, ButtonSize } from "./Button";
-export { Input, Textarea, Label, FieldError, Field } from "./Input";
+export {
+  Input,
+  Textarea,
+  Label,
+  FieldError,
+  Field,
+  RequiredMark,
+} from "./Input";
 export { Select } from "./Select";
 export { SlotCard } from "./SlotCard";
 export { MiniCalendar } from "./MiniCalendar";

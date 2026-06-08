@@ -31,31 +31,35 @@ export function AppBar({
 }: AppBarProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-appbar-bg px-4 pb-[13px] pt-3 backdrop-blur-[10px] backdrop-saturate-[1.4]">
-      <div className="flex items-center gap-2.5">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className={backBtnClass}
-          >
-            <ArrowLeft size={20} />
-          </button>
-        ) : (
-          backHref && (
-            <Link href={backHref} aria-label="Back" className={backBtnClass}>
+      {/* Frosted bar spans full width; its content tracks the centered phone
+          column so the title/controls align with the screen body on web. */}
+      <div className="mx-auto w-full max-w-[390px]">
+        <div className="flex items-center gap-2.5">
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back"
+              className={backBtnClass}
+            >
               <ArrowLeft size={20} />
-            </Link>
-          )
-        )}
-        <h1 className="ds-h1 min-w-0 flex-1 truncate">{title}</h1>
-        {right}
-      </div>
-      {hostLine && (
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-body text-[13px] text-fg2">
-          {hostLine}
+            </button>
+          ) : (
+            backHref && (
+              <Link href={backHref} aria-label="Back" className={backBtnClass}>
+                <ArrowLeft size={20} />
+              </Link>
+            )
+          )}
+          <h1 className="ds-h1 min-w-0 flex-1 truncate">{title}</h1>
+          {right}
         </div>
-      )}
+        {hostLine && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-body text-[13px] text-fg2">
+            {hostLine}
+          </div>
+        )}
+      </div>
     </header>
   );
 }
