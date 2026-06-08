@@ -74,6 +74,13 @@ export interface SaveBallotResult {
  * same Participant (no duplicate rows) and reconciles its Availability set:
  * marked slots are upserted, every other row for the participant is deleted.
  * Runs in one transaction so a ballot is applied all-or-nothing.
+ *
+ * WARNING: an **empty `ballot` deletes ALL of the participant's availability
+ * rows** (the deleteMany below has no `notIn` guard when nothing is marked).
+ * That's intentional reconciliation — "marked nothing" = "no availability" —
+ * but callers that don't want a blank submit to wipe a voter's existing votes
+ * must reject empty ballots upstream, as `submitVote` in
+ * `app/p/[slug]/actions.ts` does.
  */
 export async function saveBallot({
   pollId,
@@ -81,20 +88,34 @@ export async function saveBallot({
   ballot,
 }: SaveBallotInput): Promise<SaveBallotResult> {
   return prisma.$transaction(async (tx) => {
+    // Pre-read solely to derive the isFirstCast audit label (vote.cast vs
+    // vote.update). Best-effort under concurrent first submits: two racing
+    // first casts can both read null and both report isFirstCast, but the
+    // upsert below keeps the data correct (one participant, no duplicate-key
+    // throw) — the audit label is non-critical vs. that integrity guarantee.
     const existing = await findParticipant(tx, pollId, identity);
-    const participant =
-      existing ??
-      (await tx.participant.create({
-        data: {
-          pollId,
-          userId: identity.userId ?? null,
-          guestName: identity.userId ? null : (identity.guestName ?? null),
-        },
-      }));
+
+    // Upsert (not create) so two concurrent first submits from the same
+    // identity don't race into a P2002 on the per-poll unique constraint
+    // (pollId_userId / pollId_guestName): the loser is a no-op update, not a
+    // throw. An existing participant is likewise reused as-is.
+    const participant = await tx.participant.upsert({
+      where: identity.userId
+        ? { pollId_userId: { pollId, userId: identity.userId } }
+        : { pollId_guestName: { pollId, guestName: identity.guestName! } },
+      create: {
+        pollId,
+        userId: identity.userId ?? null,
+        guestName: identity.userId ? null : (identity.guestName ?? null),
+      },
+      update: {},
+    });
 
     const markedIds = Object.keys(ballot);
 
     // Drop rows for slots the voter left blank (tap-to-clear / never marked).
+    // NOTE: with no marked slots this deletes EVERY row for the participant —
+    // see the saveBallot doc comment; empty ballots are guarded upstream.
     await tx.availability.deleteMany({
       where: {
         participantId: participant.id,
