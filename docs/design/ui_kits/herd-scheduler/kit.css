@@ -305,6 +305,55 @@ select.field{appearance:none;-webkit-appearance:none;cursor:pointer;padding-righ
 .cal-day.empty{visibility:hidden;cursor:default}
 .cal-day.added{box-shadow:inset 0 0 0 1.5px var(--brand);color:var(--brand)}
 
+/* ---- My polls (creator home) ------------------------------ */
+.poll-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-card);box-shadow:var(--sh-1);
+  padding:14px 16px 12px;
+}
+.poll-card + .poll-card{margin-top:12px}
+.poll-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.poll-title{font-family:var(--font-display);font-weight:700;font-size:17px;line-height:22px;color:var(--fg1);margin:0;letter-spacing:-.01em}
+.poll-meta{font-family:var(--font-body);font-size:13px;color:var(--fg2);margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.poll-meta .sep{color:var(--border-strong)}
+.poll-lead{display:flex;align-items:center;gap:7px;margin-top:11px;font-family:var(--font-body);font-size:13.5px;font-weight:500;color:var(--fg1)}
+.poll-lead svg{width:15px;height:15px;flex:0 0 15px;color:var(--brand)}
+.poll-lead.waiting{color:var(--fg3);font-weight:400}
+.poll-lead.waiting svg{color:var(--fg3)}
+.poll-actions{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:13px;padding-top:12px;border-top:1px solid var(--border);
+}
+.copy-link{
+  background:none;border:0;cursor:pointer;padding:6px 4px;
+  font-family:var(--font-body);font-weight:600;font-size:13px;color:var(--fg2);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:0 0 auto;
+  transition:color var(--dur) var(--ease);
+}
+.copy-link:hover{color:var(--brand)}
+.copy-link svg{width:15px;height:15px}
+
+/* status pills */
+.spill{
+  display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+  height:26px;padding:0 11px;border-radius:var(--r-pill);
+  font-family:var(--font-body);font-weight:600;font-size:12px;white-space:nowrap;
+}
+.spill .sdot{width:7px;height:7px;border-radius:999px;display:inline-block}
+.spill svg{width:13px;height:13px}
+.spill-open{background:var(--surface-2);color:var(--fg2)}
+.spill-open .sdot{background:var(--brand)}
+.spill-closed{background:var(--surface-2);color:var(--fg3)}
+.spill-closed .sdot{background:var(--fg3)}
+.spill-final{background:var(--brand);color:#fff}
+
+/* soft circular badge (non-creator empty state) */
+.soft-badge{
+  width:64px;height:64px;border-radius:999px;
+  background:var(--surface-2);color:var(--fg2);
+  display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+}
+
 /* time-range row inside the add panel */
 .timerange{display:flex;align-items:center;gap:8px;margin-top:13px}
 .timerange .tlabel{font-family:var(--font-body);font-size:12.5px;color:var(--fg2);white-space:nowrap}
