@@ -32,6 +32,7 @@ function setOpenPoll() {
   pollFindUnique.mockResolvedValue({
     id: "poll1",
     status: "open",
+    finalTimeOptionId: null,
     timeOptions: [{ id: "s1" }, { id: "s2" }, { id: "s3" }],
   } as never);
 }
@@ -59,6 +60,19 @@ describe("submitVote — poll state", () => {
     pollFindUnique.mockResolvedValue({
       id: "poll1",
       status: "closed",
+      finalTimeOptionId: null,
+      timeOptions: [{ id: "s1" }],
+    } as never);
+    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
+    expect(res).toEqual({ ok: false, error: expect.stringContaining("closed") });
+    expect(saveBallotMock).not.toHaveBeenCalled();
+  });
+
+  it("errors when the poll is finalized (voting has ended)", async () => {
+    pollFindUnique.mockResolvedValue({
+      id: "poll1",
+      status: "open",
+      finalTimeOptionId: "s1",
       timeOptions: [{ id: "s1" }],
     } as never);
     const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });

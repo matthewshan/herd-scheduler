@@ -1,4 +1,4 @@
-# Phase 8 — Deploy hardening + Phase 2 backlog
+# Phase 10 — Deploy hardening + Phase 2 backlog
 
 > Part of the [phased implementation plan](README.md). Read the shared rules in that README before starting.
 

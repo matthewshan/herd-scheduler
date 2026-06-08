@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { CheckCheck, MapPin, X } from "lucide-react";
+import { BarChart3, CheckCheck, MapPin, X } from "lucide-react";
 import {
   AppBar,
   Avatar,
@@ -41,10 +42,20 @@ export interface VoteFormProps {
   closed: boolean;
   slots: VoteSlot[];
   isLoggedIn: boolean;
+  /** Viewer is the poll's host — shows a home button back to their dashboard. */
+  isHost: boolean;
   /** Display name for a signed-in voter (their account name). */
   userName: string | null;
-  /** This voter's saved ballot (signed-in only; guests restore from a draft). */
+  /**
+   * Pre-filled per-slot answers. A signed-in voter's saved ballot, or — for a
+   * host with no ballot yet — every slot defaulted to "yes" (presumed available).
+   */
   initialVotes: Record<string, VoteValue>;
+  /**
+   * Whether `initialVotes` is a real saved ballot (vs. prefilled host defaults).
+   * Drives the "Submit" vs "Update" label so defaults don't read as submitted.
+   */
+  hasSavedBallot: boolean;
 }
 
 interface GoogleGProps {
@@ -96,20 +107,25 @@ export function VoteForm({
   closed,
   slots,
   isLoggedIn,
+  isHost,
   userName,
   initialVotes,
+  hasSavedBallot,
 }: VoteFormProps) {
   const [votes, setVotes] = useState<Record<string, VoteValue>>(initialVotes);
   const [guestName, setGuestName] = useState("");
   const [touchedSubmit, setTouchedSubmit] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   // True once a ballot has been saved (this session or already on the server),
-  // so the action reads "Update" rather than "Submit".
-  const [everSubmitted, setEverSubmitted] = useState(
-    isLoggedIn && Object.keys(initialVotes).length > 0,
-  );
+  // so the action reads "Update" rather than "Submit". Prefilled host defaults
+  // aren't a saved ballot, so they don't flip this on.
+  const [everSubmitted, setEverSubmitted] = useState(hasSavedBallot);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // The submit button lives in the sticky bottom bar, but the name field (and
+  // its required-name error) sits up top — so a blocked submit can scroll it
+  // back into view and focus it instead of silently doing nothing.
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Restore an in-progress draft on mount (survives the OAuth round-trip and
   // refreshes). A draft, when present, wins over server-loaded votes — it's the
@@ -180,7 +196,14 @@ export function VoteForm({
   function submit() {
     setTouchedSubmit(true);
     setError(null);
-    if (nameMissing || marked === 0) {
+    if (nameMissing) {
+      // Surface the (top-of-form) name error where the voter can see it — they
+      // submitted from the bottom bar, so bring the empty field back into view.
+      nameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      nameInputRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (marked === 0) {
       return;
     }
     startTransition(async () => {
@@ -223,6 +246,7 @@ export function VoteForm({
     <div className="flex min-h-screen flex-col">
       <AppBar
         title={title}
+        homeHref={isHost ? "/" : undefined}
         right={<ThemeToggle />}
         hostLine={
           <>
@@ -256,6 +280,7 @@ export function VoteForm({
           ) : (
             <>
               <Input
+                ref={nameInputRef}
                 value={guestName}
                 onChange={(e) => {
                   setGuestName(e.target.value);
@@ -299,6 +324,7 @@ export function VoteForm({
                 <Segmented
                   value={votes[s.id] ?? null}
                   onChange={(v) => setVote(s.id, v)}
+                  disabled={closed}
                 />
               </div>
             </SlotCard>
@@ -311,6 +337,20 @@ export function VoteForm({
           </p>
         )}
 
+        {/* Anyone with the link can peek at the breakdown — quiet here while
+            voting, surfaced prominently in the saved bar after submitting. */}
+        {!submitted && (
+          <div className="mt-5 text-center">
+            <Link
+              href={`/p/${slug}/results`}
+              className="inline-flex items-center gap-1.5 font-body text-[13px] font-medium text-fg2 transition-colors duration-ds ease-ds hover:text-brand"
+            >
+              <BarChart3 size={15} />
+              See responses
+            </Link>
+          </div>
+        )}
+
         <div className="h-2" />
       </main>
 
@@ -319,9 +359,18 @@ export function VoteForm({
         progress={submitted ? undefined : total > 0 ? marked / total : 0}
       >
         {submitted ? (
-          <div className="flex items-center justify-center gap-2 py-1 font-body text-[14px] font-semibold text-yes">
-            <CheckCheck size={18} />
-            Saved — you can update anytime
+          <div className="flex flex-col items-center gap-2 py-1">
+            <div className="flex items-center gap-2 font-body text-[14px] font-semibold text-yes">
+              <CheckCheck size={18} />
+              Saved — you can update anytime
+            </div>
+            <Link
+              href={`/p/${slug}/results`}
+              className="inline-flex items-center gap-1.5 font-body text-[13px] font-semibold text-brand transition-colors duration-ds ease-ds hover:underline"
+            >
+              <BarChart3 size={15} />
+              See responses
+            </Link>
           </div>
         ) : (
           <Button

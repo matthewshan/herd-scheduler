@@ -1,92 +1,63 @@
-import Link from "next/link";
-import { auth, signIn, signOut } from "@/auth";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { canCreatePolls } from "@/lib/access";
+import { getSessionUser } from "@/lib/auth";
+import { canCreatePolls, isOwnerEmail } from "@/lib/access";
+import { listPollsForCreator } from "@/lib/polls";
+import { CreatorHome, type CreatorHomeVariant } from "./CreatorHome";
 
+// First name only — the voice addresses people by first name (design guide).
+function firstName(name: string | null, email: string): string {
+  if (name?.trim()) {
+    return name.trim().split(/\s+/)[0];
+  }
+  return email.split("@")[0];
+}
+
+// Resolve the owner's first name for the non-creator "ask {owner}" copy. Falls
+// back to a neutral noun when the owner hasn't signed in yet (no User row/name).
+async function ownerFirstName(): Promise<string> {
+  const ownerEmail = process.env.OWNER_EMAIL;
+  if (!ownerEmail) {
+    return "the host";
+  }
+  const owner = await prisma.user.findFirst({
+    where: { email: { equals: ownerEmail, mode: "insensitive" } },
+    select: { name: true },
+  });
+  return owner?.name?.trim() ? firstName(owner.name, ownerEmail) : "the host";
+}
+
+// Creator home (Phase 7.5): the signed-in host's landing screen — the polls they
+// created, newest first. Replaces the Phase 1 scaffold. Signed-out visitors are
+// sent to sign-in.
 export default async function Home() {
-  const session = await auth();
-  const mayCreate = session?.user?.email
-    ? await canCreatePolls(session.user.email)
-    : false;
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/signin");
+  }
 
-  // Prove the DB wire end-to-end against the real schema. The full screens land
-  // in later phases.
-  let dbStatus = "unknown";
-  try {
-    await prisma.user.count();
-    dbStatus = "connected";
-  } catch {
-    dbStatus = "unreachable";
+  const isOwner = user.isOwner || isOwnerEmail(user.email);
+  const mayCreate = await canCreatePolls(user.email);
+
+  let variant: CreatorHomeVariant;
+  let polls = [] as Awaited<ReturnType<typeof listPollsForCreator>>;
+  let ownerName = "the host";
+
+  if (!mayCreate) {
+    variant = "noncreator";
+    ownerName = await ownerFirstName();
+  } else {
+    polls = await listPollsForCreator(user.id);
+    variant = polls.length === 0 ? "empty" : "list";
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 p-8">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold">Herd Scheduler</h1>
-        <p className="text-sm text-gray-500">
-          Scaffold is up. Real screens arrive in later phases.
-        </p>
-      </header>
-
-      <section className="flex flex-col gap-2 rounded-lg border border-gray-200 p-4">
-        <p className="text-sm">
-          Database: <span className="font-medium">{dbStatus}</span>
-        </p>
-        {session?.user ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm">
-              Signed in as{" "}
-              <span className="font-medium">
-                {session.user.name ?? session.user.email}
-              </span>
-            </p>
-            {mayCreate && (
-              <Link
-                href="/create"
-                className="rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-medium text-white"
-              >
-                New poll
-              </Link>
-            )}
-            {session.user.isOwner && (
-              <Link href="/admin" className="text-sm text-blue-600 underline">
-                Manage access (admin)
-              </Link>
-            )}
-            <form
-              action={async () => {
-                "use server";
-                await signOut();
-              }}
-            >
-              <button
-                type="submit"
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        ) : (
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google");
-            }}
-          >
-            <button
-              type="submit"
-              className="rounded-md bg-black px-3 py-2 text-sm text-white"
-            >
-              Continue with Google
-            </button>
-          </form>
-        )}
-      </section>
-
-      <footer className="text-xs text-gray-400">
-        <Link href="/api/auth/signin">Auth.js sign-in route</Link>
-      </footer>
-    </main>
+    <CreatorHome
+      firstName={firstName(user.name ?? null, user.email)}
+      isOwner={isOwner}
+      variant={variant}
+      ownerName={ownerName}
+      polls={polls}
+    />
   );
 }

@@ -151,7 +151,7 @@ function CreateFormView({ store }: CreateFormViewProps) {
             variant="ghost"
             block
             className="mt-3.5"
-            onClick={() => router.push(`/p/${form.createdSlug}`)}
+            onClick={() => router.push(`/p/${form.createdSlug}/results`)}
           >
             <Users size={18} />
             View responses

@@ -36,13 +36,14 @@ export async function submitVote(
     select: {
       id: true,
       status: true,
+      finalTimeOptionId: true,
       timeOptions: { select: { id: true } },
     },
   });
   if (!poll) {
     return { ok: false, error: "This poll no longer exists." };
   }
-  if (poll.status !== "open") {
+  if (poll.status !== "open" || poll.finalTimeOptionId !== null) {
     return { ok: false, error: "This poll is closed — voting has ended." };
   }
 

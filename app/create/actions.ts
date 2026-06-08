@@ -6,6 +6,7 @@ import { requireCreator } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
 import { generateUniqueSlug } from "@/lib/slug";
 import { TIMEZONES, zonedWallTimeToUtc } from "@/lib/time";
+import { saveBallot, type Ballot } from "@/lib/votes";
 
 // One picked slot from the create form: a calendar day (month 0-indexed, to match
 // JS Date / lib/calendar) plus the shared start/end time labels in the poll's zone.
@@ -107,7 +108,26 @@ export async function createPoll(
       createdById: user.id,
       timeOptions: { create: timeOptions },
     },
+    include: { timeOptions: { select: { id: true } } },
   });
+
+  // The host is presumed available for the times they proposed: persist a real
+  // "yes" ballot for them at creation (not just a UI prefill), so they count as
+  // a responder and the slots start with their own availability. They can edit
+  // it from the vote screen like anyone else. Best-effort — a failure here
+  // mustn't undo the created poll; the host can still vote manually.
+  try {
+    const hostBallot: Ballot = Object.fromEntries(
+      poll.timeOptions.map((t) => [t.id, "yes" as const]),
+    );
+    await saveBallot({
+      pollId: poll.id,
+      identity: { userId: user.id },
+      ballot: hostBallot,
+    });
+  } catch {
+    // Swallow — the poll exists; the host just isn't pre-voted.
+  }
 
   await logAction({
     action: AUDIT_ACTIONS.pollCreate,

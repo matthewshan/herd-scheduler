@@ -149,3 +149,50 @@ export function tzChipLabel(tz: Timezone): string {
   const meta = BY_VALUE.get(tz) ?? BY_VALUE.get(DEFAULT_TIMEZONE)!;
   return `Times shown in ${meta.name} · ${meta.short}`;
 }
+
+/** Short zone code for compact lines, e.g. "ET". */
+export function tzShort(tz: Timezone): string {
+  return (BY_VALUE.get(tz) ?? BY_VALUE.get(DEFAULT_TIMEZONE)!).short;
+}
+
+/**
+ * A compact day · time label for one slot in the poll's zone, e.g.
+ * "Sat, Jun 7 · 6 PM ET" (the creator-home lead line). The minutes are dropped
+ * on the hour to stay terse; the short tz code is appended.
+ */
+export function formatLeadLabel(startUtc: Date, tz: Timezone): string {
+  const iana = ianaFor(tz);
+  const z = toZonedTime(startUtc, iana);
+  const day = format(z, "EEE, MMM d", { timeZone: iana });
+  // Drop ":00" on whole hours ("6:00 PM" → "6 PM"); keep minutes otherwise.
+  const time = format(z, "h:mm a", { timeZone: iana }).replace(":00", "");
+  return `${day} · ${time} ${tzShort(tz)}`;
+}
+
+/**
+ * The date span across a poll's slots, in the poll's zone, e.g. "Jun 14",
+ * "Jun 20–21", or "Jun 30 – Jul 1". `starts` are stored UTC slot start times.
+ * Returns "" for an empty list (a poll always has slots, so this is a guard).
+ */
+export function formatSpan(starts: Date[], tz: Timezone): string {
+  if (starts.length === 0) {
+    return "";
+  }
+  const iana = ianaFor(tz);
+  const sorted = [...starts].sort((a, b) => a.getTime() - b.getTime());
+  const first = toZonedTime(sorted[0], iana);
+  const last = toZonedTime(sorted[sorted.length - 1], iana);
+
+  const firstMonth = format(first, "MMM", { timeZone: iana });
+  const lastMonth = format(last, "MMM", { timeZone: iana });
+  const firstDay = format(first, "d", { timeZone: iana });
+  const lastDay = format(last, "d", { timeZone: iana });
+
+  if (firstMonth === lastMonth && firstDay === lastDay) {
+    return `${firstMonth} ${firstDay}`;
+  }
+  if (firstMonth === lastMonth) {
+    return `${firstMonth} ${firstDay}–${lastDay}`;
+  }
+  return `${firstMonth} ${firstDay} – ${lastMonth} ${lastDay}`;
+}

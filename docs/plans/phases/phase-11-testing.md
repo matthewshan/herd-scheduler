@@ -1,4 +1,4 @@
-# Phase 9 — Automated testing
+# Phase 11 — Automated testing
 
 > Part of the [phased implementation plan](README.md). Read the shared rules in that README before starting.
 
@@ -86,7 +86,7 @@ None — this is test infrastructure. (Reuses the **dev-login bypass** as the E2
 ## Out of scope
 
 - **Visual-regression / screenshot diffing** — the preview GIFs are manual review aids, not assertions.
-- **Rate-limit / size-cap tests** — those land with the controls they cover (Phase 8).
+- **Rate-limit / size-cap tests** — those land with the controls they cover (Phase 10).
 - **Component unit tests** for the Phase 3 design kit beyond incidental smoke coverage — a later add.
 - **Tests for flows not yet built** (create / vote / results) — added as Phases 5–7 land; this phase sets up
   the harness and the Phase 4 coverage, not future-phase assertions. When Results lands, add the §9

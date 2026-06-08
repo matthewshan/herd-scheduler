@@ -60,8 +60,8 @@ Phase 5 (polls + slots exist) and Phase 6 (votes exist). Uses kit components fro
 
 ## Out of scope
 
-- Per-viewer "show in my local time" toggle (Phase 2 / Phase 8 backlog).
-- Poll expiry / auto-close, notifications (Phase 8 backlog).
+- Per-viewer "show in my local time" toggle (Phase 2 / Phase 10 backlog).
+- Poll expiry / auto-close, notifications (Phase 10 backlog).
 
 ## Spec references
 

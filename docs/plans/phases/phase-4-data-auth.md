@@ -102,7 +102,7 @@ Phase 1 (Prisma + Auth.js installed). Independent of Phases 2–3, so it can run
 - The create-poll form and share flow (Phase 5) — only the gate + helpers + admin live here. Phases 5–7
   wire their own `logAction()` calls for poll/vote actions.
 - The vote and results screens (Phases 6–7).
-- Rate limiting and per-creator / per-poll size caps (Phase 8).
+- Rate limiting and per-creator / per-poll size caps (Phase 10).
 
 ## Spec references
 

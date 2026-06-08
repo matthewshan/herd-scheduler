@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Cat } from "lucide-react";
 import { auth, signIn } from "@/auth";
@@ -64,12 +63,9 @@ export default async function SignInPage() {
             Continue with Google
           </Button>
         </form>
-        <Link
-          href="/"
-          className="mt-5 inline-flex w-full justify-center font-body text-[14px] font-medium text-brand hover:underline"
-        >
-          Just voting? Continue as guest
-        </Link>
+        <p className="mt-5 font-body text-[13px] text-fg3">
+          Got a poll link? Just open it — no account needed to vote.
+        </p>
       </div>
     </main>
   );

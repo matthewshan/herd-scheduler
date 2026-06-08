@@ -199,6 +199,119 @@ async function driveVote(page: Page, slug: string): Promise<void> {
   await wait(page, 1400);
 }
 
+/** Run a non-recorded context (for seeding data — votes, extra polls). */
+async function plain<T>(
+  browser: import("@playwright/test").Browser,
+  fn: (page: Page) => Promise<T>,
+): Promise<T> {
+  const context = await browser.newContext({
+    viewport: VIEWPORT,
+    permissions: ["clipboard-write"],
+  });
+  const page = await context.newPage();
+  try {
+    return await fn(page);
+  } finally {
+    await context.close();
+  }
+}
+
+/** Cast a guest ballot on a poll (data-seeding; no recording, minimal waits). */
+async function voteAs(
+  page: Page,
+  slug: string,
+  name: string,
+  picks: string[],
+): Promise<void> {
+  await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Which times work for you?");
+  await page.getByLabel("Your name").fill(name);
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: picks[i % picks.length], exact: true })
+      .click();
+  }
+  await page.getByRole("button", { name: /Submit availability/ }).click();
+  await page.waitForSelector("text=Saved");
+}
+
+/** Quickly create a poll as the owner (data-seeding). Returns the slug. */
+async function quickCreate(
+  page: Page,
+  title: string,
+  days: string[],
+): Promise<string> {
+  await devLogin(page, "/create");
+  await page.waitForSelector("#poll-title");
+  await page.locator("#poll-title").fill(title);
+  for (const day of days) {
+    await page.getByRole("button", { name: day, exact: true }).click();
+  }
+  await page.getByRole("button", { name: /^Add \d+ days? at/ }).click();
+  await page.getByRole("button", { name: "Create poll" }).click();
+  await page.waitForSelector("text=Poll created");
+  const shareText = await page.getByText(/\/p\//).first().innerText();
+  return shareText.split("/p/")[1].trim();
+}
+
+/**
+ * Results + finalize (Phase 7): the host opens the best-fit-sorted breakdown and
+ * finalizes the winning slot, surfacing the "Finalized" banner + per-card pill.
+ */
+async function driveResults(page: Page, slug: string): Promise<void> {
+  await devLogin(page, `/p/${slug}/results`);
+  await page.waitForSelector("text=Sorted by best fit");
+  await wait(page, 1100);
+  await page.mouse.wheel(0, 240);
+  await wait(page, 850);
+  await page.mouse.wheel(0, -240);
+  await wait(page, 600);
+
+  // Finalize the top (best-fit) slot → banner + pill appear.
+  await page.getByRole("button", { name: "Finalize this time" }).first().click();
+  await page.waitForSelector("text=Final pick & other options");
+  await wait(page, 1500);
+  await page.mouse.wheel(0, 260);
+  await wait(page, 1100);
+}
+
+/**
+ * Creator home (Phase 8): the host's "Your polls" list — varied rows (a
+ * finalized poll, a leading one, one awaiting its first reply) and a copy-link.
+ */
+async function driveMyPolls(page: Page): Promise<void> {
+  await devLogin(page, "/");
+  await page.waitForSelector("text=Your polls");
+  await wait(page, 1100);
+  await page.mouse.wheel(0, 200);
+  await wait(page, 900);
+  await page.getByRole("button", { name: /Copy link/ }).first().click();
+  await wait(page, 1500);
+  await page.mouse.wheel(0, 200);
+  await wait(page, 900);
+}
+
+/**
+ * Delete a poll from the creator home (Phase 8): the trash action reveals an
+ * inline "Delete this poll?" confirm, and confirming collapses the card out with
+ * the grid-rows height + fade animation as the rows below slide up.
+ */
+async function driveDelete(page: Page): Promise<void> {
+  await devLogin(page, "/");
+  await page.waitForSelector("text=Your polls");
+  await wait(page, 1000);
+  // Reveal the two-step confirm on the first card.
+  await page.getByRole("button", { name: "Delete poll" }).first().click();
+  await wait(page, 1100);
+  // Confirm → the card animates out (collapse + fade), list reflows.
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.waitForSelector("text=Deleting…").catch(() => {});
+  await wait(page, 1800);
+}
+
 async function main(): Promise<void> {
   rmSync(TMP_DIR, { recursive: true, force: true });
   mkdirSync(TMP_DIR, { recursive: true });
@@ -239,6 +352,38 @@ async function main(): Promise<void> {
     await record(browser, 6, "vote-flow", "light", (page) =>
       driveVote(page, slug),
     );
+
+    // Seed a few more ballots so the results screen has a real breakdown and a
+    // clear best-fit winner (4 slots; Sam already voted Yes/Yes/maybe/No above).
+    await plain(browser, (p) =>
+      voteAs(p, slug, "Jordan", ["Yes", "No", "Yes", "Yes"]),
+    );
+    await plain(browser, (p) =>
+      voteAs(p, slug, "Riley", ["Yes", "Yes", "Yes", "No"]),
+    );
+
+    // Two more polls owned by the same host, for the creator-home list: one with
+    // a leading slot, one still awaiting its first reply.
+    const bookSlug = await plain(browser, (p) =>
+      quickCreate(p, "Book club: chapter 4", ["16", "17", "18"]),
+    );
+    await plain(browser, (p) =>
+      voteAs(p, bookSlug, "Sam", ["No", "Yes", "Yes"]),
+    );
+    await plain(browser, (p) =>
+      quickCreate(p, "Marcus's birthday dinner 🎂", ["23", "24"]),
+    );
+
+    // Phase 7 — results + finalize (also finalizes the game-night poll, so it
+    // shows as "Finalized" on the creator home below).
+    await record(browser, 7, "results-finalize", "light", (page) =>
+      driveResults(page, slug),
+    );
+
+    // Phase 8 — creator home, light + dark, plus the delete-card animation.
+    await record(browser, 8, "my-polls", "light", driveMyPolls);
+    await record(browser, 8, "my-polls-dark", "dark", driveMyPolls);
+    await record(browser, 8, "delete-poll", "light", driveDelete);
   } finally {
     await browser.close();
     rmSync(TMP_DIR, { recursive: true, force: true });
