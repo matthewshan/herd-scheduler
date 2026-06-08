@@ -47,9 +47,13 @@ export interface VoteFormProps {
   initialVotes: Record<string, VoteValue>;
 }
 
+interface GoogleGProps {
+  size?: number;
+}
+
 // Google's "G" — lucide has no brand logo, so inline the multi-color mark
 // (matches the dedicated sign-in screen).
-function GoogleG({ size = 16 }: { size?: number }) {
+function GoogleG({ size = 16 }: GoogleGProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
       <path

@@ -58,6 +58,13 @@ export async function submitVote(
     }
   }
 
+  // Harden against a malformed payload: `votes` is typed but arrives from an
+  // untrusted client, so a non-object would make Object.entries below throw
+  // rather than return the structured error the client expects.
+  if (!input.votes || typeof input.votes !== "object") {
+    return { ok: false, error: "Couldn't read your answers." };
+  }
+
   // Keep only answers for this poll's own slots, mapped to known values. Stale
   // slot ids (e.g. a removed option) are dropped rather than failing the submit.
   const validIds = new Set(poll.timeOptions.map((t) => t.id));
