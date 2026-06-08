@@ -54,6 +54,35 @@ the patterns already established in `components/ui/` and `lib/`.
 
 - Type renderable children/slots as `ReactNode`.
 
+## State management
+
+Pick the lightest tool that fits. The amount of state isn't the deciding factor —
+its *shape* is.
+
+- **Default to `useState`** for state that is local to one component and
+  ephemeral: independent UI flags, toasts, "which row is open", pending/error
+  strings. Several unrelated `useState` calls in a component is fine and
+  idiomatic — don't merge independent flags into one object just to cut the
+  count (you lose granular updates and end up spread-merging). See
+  `app/CreatorHome.tsx` (copy toast, confirm/delete/removed flags, error).
+
+- **Reach for `useReducer`** when several local pieces move together as one state
+  machine — e.g. a `confirming → deleting → removed` flow where transitions
+  should be expressed as named actions rather than a scatter of setters. Keep it
+  local; a reducer is still component state.
+
+- **Reach for a Zustand store** only when state is **shared across components**,
+  or is **complex form/domain state with derived logic and domain actions**. The
+  reference example is the create flow (`app/create/store.ts`): interrelated
+  calendar/range/slots, chronological derivation, and actions like `toggleDay` /
+  `addSelected` / `removeSlot`. Prefer a **per-instance vanilla store**
+  (`createStore` + `useStore`, passed via context) over a module-level singleton
+  so the state can't leak across navigations.
+
+- **Don't** put purely-local, ephemeral UI state in a Zustand (or any global)
+  store. It adds indirection, and a module-level store outlives the component —
+  state then bleeds between visits unless you manually reset it.
+
 ## Helpers (`lib/`)
 
 - Keep `lib/` helpers pure and give exported functions an explicit return type
