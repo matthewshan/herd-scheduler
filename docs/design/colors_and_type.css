@@ -54,16 +54,16 @@
   /* ---- Typography ---------------------------------------- */
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-body:    'Inter', system-ui, sans-serif;
-  --tnum:         'tnum' 1, 'lnum' 1;   /* tabular figures for times */
+  --tnum:         'tnum' 1, 'lnum' 1; /* @kind font */ /* tabular figures for times */
 
-  /* type scale (px) */
-  --t-display: 28px;   --t-display-lh: 34px;   --t-display-w: 700;
-  --t-h1:      22px;   --t-h1-lh:      28px;   --t-h1-w:      700;
-  --t-h2:      18px;   --t-h2-lh:      24px;   --t-h2-w:      500;
-  --t-body:    16px;   --t-body-lh:    24px;   --t-body-w:    400;
-  --t-label:   15px;   --t-label-lh:   20px;   --t-label-w:   500;
-  --t-meta:    13px;   --t-meta-lh:    18px;   --t-meta-w:    500;
-  --t-micro:   11px;   --t-micro-lh:   14px;   --t-micro-w:   600;
+  /* type scale (px). The -w tokens are font weights. */
+  --t-display: 28px;   --t-display-lh: 34px;   --t-display-w: 700; /* @kind font */
+  --t-h1:      22px;   --t-h1-lh:      28px;   --t-h1-w:      700; /* @kind font */
+  --t-h2:      18px;   --t-h2-lh:      24px;   --t-h2-w:      500; /* @kind font */
+  --t-body:    16px;   --t-body-lh:    24px;   --t-body-w:    400; /* @kind font */
+  --t-label:   15px;   --t-label-lh:   20px;   --t-label-w:   500; /* @kind font */
+  --t-meta:    13px;   --t-meta-lh:    18px;   --t-meta-w:    500; /* @kind font */
+  --t-micro:   11px;   --t-micro-lh:   14px;   --t-micro-w:   600; /* @kind font */
 
   /* ---- Spacing (8px grid) -------------------------------- */
   --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
@@ -82,8 +82,8 @@
   --sh-brand: 0 2px 8px rgba(0, 119, 182, 0.24);
 
   /* ---- Motion -------------------------------------------- */
-  --ease: cubic-bezier(0.4, 0.0, 0.2, 1);
-  --dur:  160ms;
+  --ease: cubic-bezier(0.4, 0.0, 0.2, 1); /* @kind other */
+  --dur:  160ms; /* @kind other */
 }
 
 /* ============================================================
@@ -127,7 +127,9 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+  /* :root only — an explicit [data-theme="light"] still wins on specificity,
+     and [data-theme="dark"] already declares the same values. */
+  :root {
     --bg:#0E1116; --surface:#171B22; --surface-2:#20262F;
     --border:#2A313B; --border-strong:#3A434F;
     --fg1:#EAEDF2; --fg2:#9BA6B4; --fg3:#6B7585;

@@ -26,7 +26,8 @@ import { join } from "node:path";
 
 const BASE = process.env.CAPTURE_BASE_URL ?? "http://localhost:3000";
 const OWNER = process.env.OWNER_EMAIL ?? "matthewshan99@gmail.com";
-const OUT_DIR = "docs/screenshots/phase-5";
+// Output GIFs are grouped by phase: docs/screenshots/phase-<n>/.
+const outDir = (phase: number) => `docs/screenshots/phase-${phase}`;
 const TMP_DIR = ".capture-tmp";
 
 // Phone-width viewport so the centered max-w-[390px] screens nearly fill the
@@ -66,6 +67,7 @@ interface Recorded<T> {
 /** Run one scenario in its own recorded context, then emit the GIF. */
 async function record<T>(
   browser: import("@playwright/test").Browser,
+  phase: number,
   name: string,
   colorScheme: "light" | "dark",
   fn: (page: Page) => Promise<T>,
@@ -91,8 +93,10 @@ async function record<T>(
   }
   const webm = readdirSync(videoDir).find((f) => f.endsWith(".webm"));
   if (!webm) throw new Error(`No video recorded for "${name}"`);
-  webmToGif(join(videoDir, webm), join(OUT_DIR, `${name}.gif`));
-  console.log(`✓ ${name}.gif`);
+  const dir = outDir(phase);
+  mkdirSync(dir, { recursive: true });
+  webmToGif(join(videoDir, webm), join(dir, `${name}.gif`));
+  console.log(`✓ phase-${phase}/${name}.gif`);
   return { result };
 }
 
@@ -160,26 +164,62 @@ async function driverPollPage(page: Page, slug: string): Promise<void> {
   await wait(page, 1000);
 }
 
+/**
+ * Vote as a guest (Phase 6): name yourself, mark availability per slot on the
+ * 3-way Segmented control, then submit to the "Saved" toast. The context is
+ * fresh (no dev-login cookie), so this is the unauthenticated guest path — the
+ * name input and inline sign-in affordance are both visible.
+ */
+async function driveVote(page: Page, slug: string): Promise<void> {
+  await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Which times work for you?");
+  await wait(page, 800);
+
+  await page.getByLabel("Your name").pressSequentially("Sam", { delay: 70 });
+  await wait(page, 500);
+
+  // Each SlotCard holds one Segmented (a "Your availability" radiogroup). Mark
+  // each in turn; Playwright scrolls the slot into view before clicking.
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const picks = ["Yes", "Yes", "If-need-be", "No"];
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    const choice = picks[i % picks.length];
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: choice, exact: true })
+      .click();
+    await wait(page, 380);
+  }
+  await wait(page, 600);
+
+  // Submit → the bar collapses to the "Saved — you can update anytime" toast.
+  await page.getByRole("button", { name: /Submit availability/ }).click();
+  await page.waitForSelector("text=Saved");
+  await wait(page, 1400);
+}
+
 async function main(): Promise<void> {
   rmSync(TMP_DIR, { recursive: true, force: true });
-  mkdirSync(OUT_DIR, { recursive: true });
   mkdirSync(TMP_DIR, { recursive: true });
 
   const browser = await chromium.launch();
   try {
+    // Phase 5 — create + share. Returns the slug the later flows vote on.
     const { result: slug } = await record(
       browser,
+      5,
       "create-flow",
       "light",
       driveCreate,
     );
 
-    await record(browser, "poll-page", "light", (page) =>
+    await record(browser, 5, "poll-page", "light", (page) =>
       driverPollPage(page, slug),
     );
 
     // A short dark-mode pass over the create form, for the theme coverage.
-    await record(browser, "create-dark", "dark", async (page) => {
+    await record(browser, 5, "create-dark", "dark", async (page) => {
       await devLogin(page, "/create");
       await page.waitForSelector("#poll-title");
       await wait(page, 500);
@@ -194,6 +234,11 @@ async function main(): Promise<void> {
       await page.getByRole("button", { name: /^Add \d+ days at/ }).click();
       await wait(page, 1200);
     });
+
+    // Phase 6 — guest vote flow against the poll created above.
+    await record(browser, 6, "vote-flow", "light", (page) =>
+      driveVote(page, slug),
+    );
   } finally {
     await browser.close();
     rmSync(TMP_DIR, { recursive: true, force: true });
