@@ -37,10 +37,11 @@ export default async function VotePage({ params }: VotePageProps) {
   }
 
   const user = await getSessionUser();
-  // The host (creator or owner) gets a home button back to their dashboard.
-  const isHost =
-    user !== null &&
-    (user.id === poll.createdById || isOwnerEmail(user.email));
+  // Privilege vs. presumption: the creator *or* the owner (acting as admin)
+  // gets host affordances like the dashboard home button, but only the creator
+  // proposed these times — so only they get the presumed-available prefill.
+  const isCreator = user !== null && user.id === poll.createdById;
+  const isHost = isCreator || (user !== null && isOwnerEmail(user.email));
   const closed = poll.status !== "open" || poll.finalTimeOptionId !== null;
 
   const slots = poll.timeOptions.map((opt) => {
@@ -52,10 +53,12 @@ export default async function VotePage({ params }: VotePageProps) {
   // in-progress votes from a local draft on the client.
   const savedBallot = user ? await loadBallot(poll.id, { userId: user.id }) : {};
   const hasSavedBallot = Object.keys(savedBallot).length > 0;
-  // The host is presumed available: with no ballot yet (and voting still open),
-  // default every slot to "yes" so they just clear the times that don't work.
+  // The creator is presumed available: with no ballot yet (and voting still
+  // open), default every slot to "yes" so they just clear the times that don't
+  // work. This is a fallback — createPoll persists this ballot at creation —
+  // and it must never reach the owner viewing someone else's poll.
   const initialVotes =
-    isHost && !hasSavedBallot && !closed
+    isCreator && !hasSavedBallot && !closed
       ? Object.fromEntries(slots.map((s) => [s.id, "yes" as const]))
       : savedBallot;
 
