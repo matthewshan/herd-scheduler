@@ -31,28 +31,36 @@ export type Ballot = Record<string, VoteValue>;
 
 /**
  * Who is voting. A logged-in voter keys on `userId`; a guest keys on
- * `guestName`. Exactly one is set (Postgres treats NULLs as distinct, so the
- * two per-poll unique constraints don't collide — see schema).
+ * `guestKey` — the opaque per-browser identity from `lib/guest.ts` (Phase 9) —
+ * with `guestName` as a display label only (updatable; a guest can rename and
+ * the row follows). Guests set both `guestKey` and `guestName`; users set only
+ * `userId`. Postgres treats NULLs as distinct, so the two per-poll unique
+ * constraints don't collide — see schema.
  */
 export interface ParticipantIdentity {
   userId?: string | null;
+  guestKey?: string | null;
   guestName?: string | null;
 }
 
-// Look up the existing participant for an identity within a transaction. Logged-
-// in voters and guests use their respective per-poll unique constraints.
+// The unique-constraint selector for an identity: logged-in voters key on
+// pollId_userId, guests on pollId_guestKey. One builder so find/upsert/load
+// can't disagree on what "the same voter" means.
+function participantWhere(pollId: string, identity: ParticipantIdentity) {
+  if (identity.userId) {
+    return { pollId_userId: { pollId, userId: identity.userId } };
+  }
+  return { pollId_guestKey: { pollId, guestKey: identity.guestKey! } };
+}
+
+// Look up the existing participant for an identity within a transaction.
 function findParticipant(
   tx: Prisma.TransactionClient,
   pollId: string,
   identity: ParticipantIdentity,
 ) {
-  if (identity.userId) {
-    return tx.participant.findUnique({
-      where: { pollId_userId: { pollId, userId: identity.userId } },
-    });
-  }
   return tx.participant.findUnique({
-    where: { pollId_guestName: { pollId, guestName: identity.guestName! } },
+    where: participantWhere(pollId, identity),
   });
 }
 
@@ -97,18 +105,18 @@ export async function saveBallot({
 
     // Upsert (not create) so two concurrent first submits from the same
     // identity don't race into a P2002 on the per-poll unique constraint
-    // (pollId_userId / pollId_guestName): the loser is a no-op update, not a
-    // throw. An existing participant is likewise reused as-is.
+    // (pollId_userId / pollId_guestKey): the loser is a no-op update, not a
+    // throw. A returning guest's update refreshes `guestName` — the label
+    // follows the row, so renaming doesn't fork a second participant.
     const participant = await tx.participant.upsert({
-      where: identity.userId
-        ? { pollId_userId: { pollId, userId: identity.userId } }
-        : { pollId_guestName: { pollId, guestName: identity.guestName! } },
+      where: participantWhere(pollId, identity),
       create: {
         pollId,
         userId: identity.userId ?? null,
+        guestKey: identity.userId ? null : (identity.guestKey ?? null),
         guestName: identity.userId ? null : (identity.guestName ?? null),
       },
-      update: {},
+      update: identity.userId ? {} : { guestName: identity.guestName ?? null },
     });
 
     const markedIds = Object.keys(ballot);
@@ -144,24 +152,17 @@ export async function saveBallot({
 
 /**
  * Load a voter's current ballot for a poll (empty when they haven't voted). Used
- * to pre-fill the vote screen for a logged-in voter; guests' in-progress votes
- * are restored client-side from a local draft, not the DB.
+ * to pre-fill the vote screen — server-side for a logged-in voter (`userId`),
+ * client-hydrated for a returning guest (`guestKey`, Phase 9).
  */
 export async function loadBallot(
   pollId: string,
   identity: ParticipantIdentity,
 ): Promise<Ballot> {
-  const participant = identity.userId
-    ? await prisma.participant.findUnique({
-        where: { pollId_userId: { pollId, userId: identity.userId } },
-        include: { availabilities: true },
-      })
-    : await prisma.participant.findUnique({
-        where: {
-          pollId_guestName: { pollId, guestName: identity.guestName! },
-        },
-        include: { availabilities: true },
-      });
+  const participant = await prisma.participant.findUnique({
+    where: participantWhere(pollId, identity),
+    include: { availabilities: true },
+  });
 
   if (!participant) {
     return {};
@@ -171,4 +172,35 @@ export async function loadBallot(
     ballot[a.timeOptionId] = RESPONSE_TO_UI[a.response];
   }
   return ballot;
+}
+
+export interface GuestRecord {
+  ballot: Ballot;
+  /** The display label stored on the guest's row (their last submitted name). */
+  guestName: string | null;
+}
+
+/**
+ * A returning guest's saved state for a poll, in one query: their ballot plus
+ * the display name on their row. Backs the client-side hydration of the vote
+ * screen (the page is a server component that can't read the browser-held
+ * `guestKey`). Returns `null` when the key has no participant on this poll.
+ * The result goes only to the key's holder — never to other viewers.
+ */
+export async function loadGuestRecord(
+  pollId: string,
+  guestKey: string,
+): Promise<GuestRecord | null> {
+  const participant = await prisma.participant.findUnique({
+    where: { pollId_guestKey: { pollId, guestKey } },
+    include: { availabilities: true },
+  });
+  if (!participant) {
+    return null;
+  }
+  const ballot: Ballot = {};
+  for (const a of participant.availabilities) {
+    ballot[a.timeOptionId] = RESPONSE_TO_UI[a.response];
+  }
+  return { ballot, guestName: participant.guestName };
 }

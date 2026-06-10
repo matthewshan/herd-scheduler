@@ -9,7 +9,10 @@ vi.mock("@/lib/prisma", () => ({
 }));
 vi.mock("@/auth", () => ({ signIn: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getSessionUser: vi.fn() }));
-vi.mock("@/lib/votes", () => ({ saveBallot: vi.fn() }));
+vi.mock("@/lib/votes", () => ({
+  saveBallot: vi.fn(),
+  loadGuestRecord: vi.fn(),
+}));
 vi.mock("@/lib/access", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/access")>("@/lib/access");
@@ -27,6 +30,9 @@ const pollFindUnique = vi.mocked(prisma.poll.findUnique);
 const sessionUser = vi.mocked(getSessionUser);
 const saveBallotMock = vi.mocked(saveBallot);
 const logActionMock = vi.mocked(logAction);
+
+// A well-formed per-browser guest key (Phase 9) — guests must send one.
+const GUEST_KEY = "guestkey1234567890abc";
 
 // A standard open poll with three real slots.
 function setOpenPoll() {
@@ -52,8 +58,16 @@ afterEach(() => {
 describe("submitVote — poll state", () => {
   it("errors when the poll doesn't exist", async () => {
     pollFindUnique.mockResolvedValue(null);
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
-    expect(res).toEqual({ ok: false, error: expect.stringContaining("no longer exists") });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: expect.stringContaining("no longer exists"),
+    });
     expect(saveBallotMock).not.toHaveBeenCalled();
   });
 
@@ -64,8 +78,16 @@ describe("submitVote — poll state", () => {
       finalTimeOptionId: null,
       timeOptions: [{ id: "s1" }],
     } as never);
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
-    expect(res).toEqual({ ok: false, error: expect.stringContaining("closed") });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: expect.stringContaining("closed"),
+    });
     expect(saveBallotMock).not.toHaveBeenCalled();
   });
 
@@ -76,8 +98,16 @@ describe("submitVote — poll state", () => {
       finalTimeOptionId: "s1",
       timeOptions: [{ id: "s1" }],
     } as never);
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
-    expect(res).toEqual({ ok: false, error: expect.stringContaining("closed") });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: expect.stringContaining("closed"),
+    });
     expect(saveBallotMock).not.toHaveBeenCalled();
   });
 });
@@ -89,11 +119,39 @@ describe("submitVote — guest name gate", () => {
     expect(saveBallotMock).not.toHaveBeenCalled();
   });
 
-  it("trims the guest name and keys the participant on it", async () => {
-    await submitVote({ slug: "x", guestName: "  Sam  ", votes: { s1: "yes" } });
+  it("trims the guest name; identity keys on guestKey with the name as label", async () => {
+    await submitVote({
+      slug: "x",
+      guestName: "  Sam  ",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
     expect(saveBallotMock).toHaveBeenCalledWith(
-      expect.objectContaining({ identity: { guestName: "Sam" } }),
+      expect.objectContaining({
+        identity: { guestKey: GUEST_KEY, guestName: "Sam" },
+      }),
     );
+  });
+
+  it("rejects a guest submit with no guestKey (Phase 9 gate)", async () => {
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      votes: { s1: "yes" },
+    });
+    expect(res.ok).toBe(false);
+    expect(saveBallotMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed guestKey", async () => {
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: "nope!",
+      votes: { s1: "yes" },
+    });
+    expect(res.ok).toBe(false);
+    expect(saveBallotMock).not.toHaveBeenCalled();
   });
 
   it("rejects an over-long guest name (input-size cap)", async () => {
@@ -107,7 +165,10 @@ describe("submitVote — guest name gate", () => {
   });
 
   it("ignores guestName and keys on userId when signed in", async () => {
-    sessionUser.mockResolvedValue({ id: "user1", email: "u@example.com" } as never);
+    sessionUser.mockResolvedValue({
+      id: "user1",
+      email: "u@example.com",
+    } as never);
     await submitVote({ slug: "x", guestName: "ignored", votes: { s1: "yes" } });
     expect(saveBallotMock).toHaveBeenCalledWith(
       expect.objectContaining({ identity: { userId: "user1" } }),
@@ -120,6 +181,7 @@ describe("submitVote — ballot filtering", () => {
     await submitVote({
       slug: "x",
       guestName: "Sam",
+      guestKey: GUEST_KEY,
       votes: { s1: "yes", gone: "no" },
     });
     expect(saveBallotMock).toHaveBeenCalledWith(
@@ -131,6 +193,7 @@ describe("submitVote — ballot filtering", () => {
     const res = await submitVote({
       slug: "x",
       guestName: "Sam",
+      guestKey: GUEST_KEY,
       votes: { s1: "definitely" as never },
     });
     expect(res.ok).toBe(false);
@@ -138,7 +201,12 @@ describe("submitVote — ballot filtering", () => {
   });
 
   it("rejects an empty ballot (so saveBallot never wipes all rows)", async () => {
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: {} });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: {},
+    });
     expect(res.ok).toBe(false);
     expect(saveBallotMock).not.toHaveBeenCalled();
   });
@@ -147,6 +215,7 @@ describe("submitVote — ballot filtering", () => {
     const res = await submitVote({
       slug: "x",
       guestName: "Sam",
+      guestKey: GUEST_KEY,
       votes: { gone: "yes" },
     });
     expect(res.ok).toBe(false);
@@ -156,8 +225,16 @@ describe("submitVote — ballot filtering", () => {
 
 describe("submitVote — audit action", () => {
   it("logs vote.cast and returns updated:false on a first cast", async () => {
-    saveBallotMock.mockResolvedValue({ participantId: "p1", isFirstCast: true });
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
+    saveBallotMock.mockResolvedValue({
+      participantId: "p1",
+      isFirstCast: true,
+    });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
     expect(res).toEqual({ ok: true, updated: false });
     expect(logActionMock).toHaveBeenCalledWith(
       expect.objectContaining({ action: AUDIT_ACTIONS.voteCast }),
@@ -165,8 +242,16 @@ describe("submitVote — audit action", () => {
   });
 
   it("logs vote.update and returns updated:true on a resubmit", async () => {
-    saveBallotMock.mockResolvedValue({ participantId: "p1", isFirstCast: false });
-    const res = await submitVote({ slug: "x", guestName: "Sam", votes: { s1: "yes" } });
+    saveBallotMock.mockResolvedValue({
+      participantId: "p1",
+      isFirstCast: false,
+    });
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
     expect(res).toEqual({ ok: true, updated: true });
     expect(logActionMock).toHaveBeenCalledWith(
       expect.objectContaining({ action: AUDIT_ACTIONS.voteUpdate }),
