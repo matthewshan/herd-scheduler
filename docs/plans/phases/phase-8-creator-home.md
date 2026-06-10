@@ -1,4 +1,4 @@
-# Phase 7.5 — Creator home ("My polls")
+# Phase 8 — Creator home ("My polls")
 
 > Part of the [phased implementation plan](README.md). Read the shared rules in that README before starting.
 
@@ -96,11 +96,11 @@ the Phase 7 results screen. Build Phase 7 first. Also uses kit components from P
 
 - Owner "all polls" view, search/filter/pagination, archiving, or deleting polls.
 - Polls you only **voted** on (not created) — this screen is "polls I created" only.
-- Poll expiry / auto-close and notifications (Phase 8 backlog).
+- Poll expiry / auto-close and notifications (Phase 10 backlog).
 
 ## Front-end deliverable (mandatory)
 
-This is a user-facing screen, so the PR must ship a captured GIF under `docs/screenshots/phase-7.5/`,
+This is a user-facing screen, so the PR must ship a captured GIF under `docs/screenshots/phase-8/`,
 embedded in the PR description, via `pnpm capture:visual`. Add a `record(...)` scenario covering the list →
 open-results / copy-link path (and ideally the empty + non-creator states) rather than hand-recording — see
 `docs/context-engineering/visual-capture.md`.

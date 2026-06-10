@@ -34,7 +34,7 @@ Nothing. This is the first phase.
   layout. No `sitemap.xml`. (Spec §9.)
 - **Minimal multi-stage `Dockerfile`** — install deps → `next build` (standalone) → copy the standalone
   server into a slim runtime image and `node server.js`. Keep it simple; hardening (non-root, slimming,
-  migrations entrypoint) is Phase 8.
+  migrations entrypoint) is Phase 10.
 - **`docker-compose.yml`** with `app` + `postgres:16` services matching the sketch in spec §4 (env vars,
   `depends_on`, a named `pgdata` volume). This is the canonical "anyone can run it" path.
 
@@ -70,7 +70,7 @@ Phases 2–3.) Do not pull in CDN fonts/icons even temporarily; Phase 2 self-hos
 - Design tokens / Tailwind theme plumbing (Phase 2).
 - Any kit components or real screens (Phase 3+).
 - Full Prisma schema, Auth.js Prisma adapter, allowlist, owner bootstrap (Phase 4).
-- Dockerfile hardening, migrations-as-entrypoint, rate limiting, deploy docs (Phase 8).
+- Dockerfile hardening, migrations-as-entrypoint, rate limiting, deploy docs (Phase 10).
 
 ## Spec references
 

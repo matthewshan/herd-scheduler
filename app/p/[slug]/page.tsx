@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { isOwnerEmail } from "@/lib/access";
 import { formatSlotInZone, tzChipLabel } from "@/lib/time";
 import { loadBallot } from "@/lib/votes";
 import { VoteForm } from "./VoteForm";
@@ -36,14 +37,30 @@ export default async function VotePage({ params }: VotePageProps) {
   }
 
   const user = await getSessionUser();
-  // Signed-in voters get their saved ballot pre-filled; guests restore any
-  // in-progress votes from a local draft on the client.
-  const initialVotes = user ? await loadBallot(poll.id, { userId: user.id }) : {};
+  // Privilege vs. presumption: the creator *or* the owner (acting as admin)
+  // gets host affordances like the dashboard home button, but only the creator
+  // proposed these times — so only they get the presumed-available prefill.
+  const isCreator = user !== null && user.id === poll.createdById;
+  const isHost = isCreator || (user !== null && isOwnerEmail(user.email));
+  const closed = poll.status !== "open" || poll.finalTimeOptionId !== null;
 
   const slots = poll.timeOptions.map((opt) => {
     const s = formatSlotInZone(opt.startTime, opt.endTime, poll.timezone);
     return { id: opt.id, date: s.date, start: s.start, end: s.end };
   });
+
+  // Signed-in voters get their saved ballot pre-filled; guests restore any
+  // in-progress votes from a local draft on the client.
+  const savedBallot = user ? await loadBallot(poll.id, { userId: user.id }) : {};
+  const hasSavedBallot = Object.keys(savedBallot).length > 0;
+  // The creator is presumed available: with no ballot yet (and voting still
+  // open), default every slot to "yes" so they just clear the times that don't
+  // work. This is a fallback — createPoll persists this ballot at creation —
+  // and it must never reach the owner viewing someone else's poll.
+  const initialVotes =
+    isCreator && !hasSavedBallot && !closed
+      ? Object.fromEntries(slots.map((s) => [s.id, "yes" as const]))
+      : savedBallot;
 
   return (
     <VoteForm
@@ -53,11 +70,13 @@ export default async function VotePage({ params }: VotePageProps) {
       description={poll.description}
       location={poll.location}
       tzLabel={tzChipLabel(poll.timezone)}
-      closed={poll.status !== "open"}
+      closed={closed}
       slots={slots}
       isLoggedIn={user !== null}
+      isHost={isHost}
       userName={user?.name ?? null}
       initialVotes={initialVotes}
+      hasSavedBallot={hasSavedBallot}
     />
   );
 }

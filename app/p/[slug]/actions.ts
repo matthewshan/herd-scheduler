@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { getSessionUser } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
+import { LIMITS, withinLimit } from "@/lib/limits";
 import { saveBallot, type Ballot } from "@/lib/votes";
 import type { VoteValue } from "@/components/ui";
 
@@ -36,13 +37,14 @@ export async function submitVote(
     select: {
       id: true,
       status: true,
+      finalTimeOptionId: true,
       timeOptions: { select: { id: true } },
     },
   });
   if (!poll) {
     return { ok: false, error: "This poll no longer exists." };
   }
-  if (poll.status !== "open") {
+  if (poll.status !== "open" || poll.finalTimeOptionId !== null) {
     return { ok: false, error: "This poll is closed — voting has ended." };
   }
 
@@ -55,6 +57,12 @@ export async function submitVote(
     guestName = input.guestName?.trim() ?? "";
     if (!guestName) {
       return { ok: false, error: "Add your name so friends know who voted." };
+    }
+    if (!withinLimit(guestName, LIMITS.guestName)) {
+      return {
+        ok: false,
+        error: `Keep your name under ${LIMITS.guestName} characters.`,
+      };
     }
   }
 

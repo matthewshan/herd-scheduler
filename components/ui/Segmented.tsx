@@ -9,6 +9,8 @@ export interface SegmentedProps {
   value: VoteValue | null;
   /** Called with the new value, or `null` when the active segment is re-tapped. */
   onChange: (value: VoteValue | null) => void;
+  /** Lock the control (e.g. voting has ended) — greys it out, ignores taps. */
+  disabled?: boolean;
 }
 
 const SEG: { key: VoteValue; label: string }[] = [
@@ -26,12 +28,15 @@ const ON_TINT: Record<VoteValue, string> = {
 
 // Signature 3-way control. The selected segment cross-fades to its semantic
 // tint and reveals a check glyph; re-tapping the active segment clears it.
-export function Segmented({ value, onChange }: SegmentedProps) {
+export function Segmented({ value, onChange, disabled = false }: SegmentedProps) {
   return (
     <div
       role="radiogroup"
       aria-label="Your availability"
-      className="grid grid-cols-3 gap-1.5 rounded-pill bg-surface-2 p-[5px]"
+      aria-disabled={disabled || undefined}
+      className={`grid grid-cols-3 gap-1.5 rounded-pill bg-surface-2 p-[5px] transition-opacity duration-ds ease-ds ${
+        disabled ? "opacity-55" : ""
+      }`}
     >
       {SEG.map((o) => {
         const on = value === o.key;
@@ -41,8 +46,9 @@ export function Segmented({ value, onChange }: SegmentedProps) {
             type="button"
             role="radio"
             aria-checked={on}
+            disabled={disabled}
             onClick={() => onChange(on ? null : o.key)}
-            className={`flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-pill font-body text-[13.5px] font-semibold transition-colors duration-ds ease-ds ${
+            className={`flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-pill font-body text-[13.5px] font-semibold transition-colors duration-ds ease-ds disabled:cursor-not-allowed ${
               on ? ON_TINT[o.key] : "text-fg2 hover:text-fg1"
             }`}
           >

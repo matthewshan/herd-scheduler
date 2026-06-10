@@ -5,6 +5,8 @@ export { AvatarStack } from "./AvatarStack";
 export { TzChip } from "./TzChip";
 export { Pill } from "./Pill";
 export type { PillVariant } from "./Pill";
+export { StatusPill } from "./StatusPill";
+export type { PollDisplayStatus } from "./StatusPill";
 export { StackedBar } from "./StackedBar";
 export type { TallyCounts } from "./StackedBar";
 export { Tally } from "./Tally";

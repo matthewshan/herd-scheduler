@@ -2,13 +2,19 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, House } from "lucide-react";
 
 const backBtnClass =
   "flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-[10px] text-fg1 transition-colors duration-ds ease-ds hover:bg-surface-2";
 
 export interface AppBarProps {
   title: string;
+  /**
+   * Home affordance as a link — renders a leading house button (e.g. → the
+   * creator dashboard). Takes precedence over the back affordances when set,
+   * since a screen shows one leading control.
+   */
+  homeHref?: string;
   /** Back affordance as a callback — renders a leading icon button. */
   onBack?: () => void;
   /** Back affordance as a link — for server-rendered pages (no client handler). */
@@ -24,6 +30,7 @@ export interface AppBarProps {
 // appbar-bg token.
 export function AppBar({
   title,
+  homeHref,
   onBack,
   backHref,
   hostLine,
@@ -35,7 +42,15 @@ export function AppBar({
           column so the title/controls align with the screen body on web. */}
       <div className="mx-auto w-full max-w-[390px]">
         <div className="flex items-center gap-2.5">
-          {onBack ? (
+          {homeHref ? (
+            <Link
+              href={homeHref}
+              aria-label="Your polls"
+              className={backBtnClass}
+            >
+              <House size={20} />
+            </Link>
+          ) : onBack ? (
             <button
               type="button"
               onClick={onBack}

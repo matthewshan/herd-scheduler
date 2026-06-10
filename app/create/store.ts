@@ -60,9 +60,8 @@ export interface PollFormFields {
   slots: DraftSlot[];
   error: string | null;
 
-  // share/success
+  // share/success — the form's terminal outcome (drives the success screen).
   createdSlug: string | null;
-  copied: boolean;
 }
 
 export interface PollFormState extends PollFormFields {
@@ -97,7 +96,6 @@ export function createPollFormStore(init: PollFormInit) {
     error: null,
 
     createdSlug: null,
-    copied: false,
 
     patch: (partial) => set(partial),
 
