@@ -46,10 +46,10 @@ export interface ResultsViewProps {
   respondedCount: number;
   anonymous: boolean;
   isHost: boolean;
-  /** Poll still accepting votes — gates the host's "add your availability" link. */
+  /** Poll still accepting votes — gates the "submit yours" link. */
   votingOpen: boolean;
-  /** Host already submitted a ballot — switches the link to "edit yours". */
-  hostHasVoted: boolean;
+  /** Viewer already submitted a ballot — switches the link to "edit yours". */
+  viewerHasVoted: boolean;
   /** The finalized pick (for the banner), or null. */
   finalized: { date: string; start: string } | null;
   /** Slots, best-fit first. */
@@ -68,7 +68,7 @@ export function ResultsView({
   anonymous,
   isHost,
   votingOpen,
-  hostHasVoted,
+  viewerHasVoted,
   finalized,
   slots,
 }: ResultsViewProps) {
@@ -115,7 +115,7 @@ export function ResultsView({
 
       <main className="mx-auto w-full max-w-[390px] flex-1 px-4 py-5">
         {finalized && (
-          <div className="mb-4 flex items-center gap-3 rounded-card border border-brand/25 bg-brand-tint px-[14px] py-3">
+          <div className="border-brand/25 mb-4 flex items-center gap-3 rounded-card border bg-brand-tint px-[14px] py-3">
             <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand text-white">
               <Check size={18} />
             </span>
@@ -137,16 +137,20 @@ export function ResultsView({
                 ? "Final pick & other options"
                 : "Sorted by best fit"}
           </h2>
-          {/* The host votes in their own poll like anyone else — this is their
-              way back to the vote screen (hidden once voting has ended). Reads
-              "edit" once they've submitted, "add" before. */}
-          {isHost && votingOpen && (
+          {/* Anyone viewing can vote in the poll — this is the way (back) to the
+              vote screen (hidden once voting has ended). Reads "edit yours" once
+              the viewer has submitted, "submit yours" before. */}
+          {votingOpen && (
             <Link
               href={`/p/${slug}`}
               className="inline-flex flex-shrink-0 items-center gap-1.5 font-body text-[13px] font-semibold text-brand transition-colors duration-ds ease-ds hover:underline"
             >
-              {hostHasVoted ? <Pencil size={14} /> : <CalendarPlus size={15} />}
-              {hostHasVoted ? "Edit yours" : "Add yours"}
+              {viewerHasVoted ? (
+                <Pencil size={14} />
+              ) : (
+                <CalendarPlus size={15} />
+              )}
+              {viewerHasVoted ? "Edit yours" : "Submit yours"}
             </Link>
           )}
         </div>
@@ -225,7 +229,7 @@ export function ResultsView({
         </div>
 
         {error && (
-          <p className="mt-3 rounded-input border border-no/30 bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
+          <p className="border-no/30 mt-3 rounded-input border bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
             {error}
           </p>
         )}

@@ -32,12 +32,14 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
 
   const user = await getSessionUser();
   const isHost =
+    user !== null && (user.id === poll.createdById || isOwnerEmail(user.email));
+  // Whether the viewer (any signed-in user) already has a ballot — drives the
+  // "submit yours" vs "edit yours" CTA. Guests aren't keyed by session, so we
+  // treat them as not-yet-voted (the CTA still links to the vote screen, where
+  // any local draft restores).
+  const viewerHasVoted =
     user !== null &&
-    (user.id === poll.createdById || isOwnerEmail(user.email));
-  // Only the host's link cares whether they've voted; skip the query otherwise.
-  const hostHasVoted = isHost
-    ? Object.keys(await loadBallot(poll.id, { userId: user!.id })).length > 0
-    : false;
+    Object.keys(await loadBallot(poll.id, { userId: user.id })).length > 0;
 
   const slots: ResultSlotView[] = results.slots.map((s) => {
     const d = formatSlotInZone(s.startTime, s.endTime, poll.timezone);
@@ -77,7 +79,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
       anonymous={results.anonymous}
       isHost={isHost}
       votingOpen={poll.status === "open" && poll.finalTimeOptionId === null}
-      hostHasVoted={hostHasVoted}
+      viewerHasVoted={viewerHasVoted}
       finalized={finalized}
       slots={slots}
     />
