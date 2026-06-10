@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "zustand";
 import { Calendar, Check, Copy, Plus, Users, X } from "lucide-react";
@@ -57,6 +57,9 @@ interface CreateFormViewProps {
 function CreateFormView({ store }: CreateFormViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // Copy-link toast — ephemeral, view-local UI; kept out of the form store
+  // (see docs/typescript-standards.md → State management).
+  const [copied, setCopied] = useState(false);
 
   const form = useStore(store);
   const { patch, toggleDay, addSelected, removeSlot } = form;
@@ -105,8 +108,8 @@ function CreateFormView({ store }: CreateFormViewProps) {
     // writeText rejects when the clipboard is blocked (insecure origin, denied
     // permission, headless) — swallow it so it isn't an unhandled rejection.
     void navigator.clipboard?.writeText(url).catch(() => {});
-    patch({ copied: true });
-    setTimeout(() => patch({ copied: false }), 1600);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
   }
 
   // ---------- success / share state ----------
@@ -141,8 +144,8 @@ function CreateFormView({ store }: CreateFormViewProps) {
                 {shareUrl}
               </span>
               <Button size="sm" onClick={copyLink}>
-                {form.copied ? <Check size={16} /> : <Copy size={16} />}
-                {form.copied ? "Copied" : "Copy link"}
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+                {copied ? "Copied" : "Copy link"}
               </Button>
             </div>
           </div>

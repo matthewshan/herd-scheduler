@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useReducer, useState, useTransition } from "react";
 import {
   Cat,
   Check,
@@ -28,6 +28,57 @@ export type CreatorHomeVariant = "list" | "empty" | "noncreator";
 // Duration of the delete card's collapse+fade. Kept as a constant so the CSS
 // transition and the "refresh after it lands" timer can't drift apart.
 const DELETE_ANIM_MS = 480;
+
+// The per-card delete flow is a small state machine — idle → confirming →
+// deleting → removed (or → error). Modeled with useReducer so the transitions
+// read as named actions instead of a scatter of four interdependent setters.
+// (See docs/typescript-standards.md → State management.) The copy-link toast is
+// independent of all this, so it stays its own useState.
+interface DeleteState {
+  /** Slug whose confirm bar is showing, or null. */
+  confirmingSlug: string | null;
+  /** Slug whose delete request is in flight, or null. */
+  deletingSlug: string | null;
+  /** Slugs collapsing out of the list after a successful delete. */
+  removedSlugs: Set<string>;
+  /** Last delete failure, surfaced above the list. */
+  error: string | null;
+}
+
+type DeleteAction =
+  | { type: "request"; slug: string }
+  | { type: "cancel" }
+  | { type: "deleting"; slug: string }
+  | { type: "removed"; slug: string }
+  | { type: "failed"; error: string };
+
+const initialDeleteState: DeleteState = {
+  confirmingSlug: null,
+  deletingSlug: null,
+  removedSlugs: new Set(),
+  error: null,
+};
+
+function deleteReducer(state: DeleteState, action: DeleteAction): DeleteState {
+  switch (action.type) {
+    case "request":
+      return { ...state, confirmingSlug: action.slug, error: null };
+    case "cancel":
+      return { ...state, confirmingSlug: null };
+    case "deleting":
+      return { ...state, deletingSlug: action.slug, error: null };
+    case "removed":
+      // Clear the confirm/in-flight markers and start the collapse animation.
+      return {
+        ...state,
+        confirmingSlug: null,
+        deletingSlug: null,
+        removedSlugs: new Set(state.removedSlugs).add(action.slug),
+      };
+    case "failed":
+      return { ...state, deletingSlug: null, error: action.error };
+  }
+}
 
 export interface CreatorHomeProps {
   firstName: string;
@@ -238,10 +289,7 @@ export function CreatorHome({
 }: CreatorHomeProps) {
   const router = useRouter();
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
-  const [confirmingSlug, setConfirmingSlug] = useState<string | null>(null);
-  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
-  const [removedSlugs, setRemovedSlugs] = useState<Set<string>>(new Set());
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [del, dispatch] = useReducer(deleteReducer, initialDeleteState);
   const [, startDelete] = useTransition();
 
   function copy(slug: string) {
@@ -255,24 +303,20 @@ export function CreatorHome({
   }
 
   function confirmDelete(slug: string) {
-    setDeleteError(null);
-    setDeletingSlug(slug);
+    dispatch({ type: "deleting", slug });
     startDelete(async () => {
       const res = await deletePoll(slug);
       if (res.ok) {
         // Collapse the card first, then re-fetch once the animation lands so the
         // row doesn't pop out abruptly. The server action revalidated "/", so
         // the refresh drops the deleted poll from the list for good.
-        setConfirmingSlug(null);
-        setDeletingSlug(null);
-        setRemovedSlugs((cur) => new Set(cur).add(slug));
+        dispatch({ type: "removed", slug });
         // Wait for the collapse+fade to finish before re-fetching, so the row
         // settles out gracefully instead of snapping mid-animation. Stays a
         // touch longer than the card's transition (see DELETE_ANIM_MS).
         setTimeout(() => router.refresh(), DELETE_ANIM_MS + 60);
       } else {
-        setDeleteError(res.error);
-        setDeletingSlug(null);
+        dispatch({ type: "failed", error: res.error });
       }
     });
   }
@@ -327,14 +371,14 @@ export function CreatorHome({
     <div className="flex min-h-screen flex-col">
       <Header firstName={firstName} isOwner={isOwner} count={polls.length} />
       <main className="mx-auto w-full max-w-[390px] flex-1 px-4 py-4">
-        {deleteError && (
+        {del.error && (
           <p className="mb-3 rounded-input border border-no/30 bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
-            {deleteError}
+            {del.error}
           </p>
         )}
         <div className="flex flex-col gap-2.5">
           {polls.map((p) => {
-            const removed = removedSlugs.has(p.slug);
+            const removed = del.removedSlugs.has(p.slug);
             // grid-rows 1fr→0fr collapses the row height while it fades, so the
             // cards below slide up smoothly as the deleted one drops out.
             return (
@@ -352,13 +396,10 @@ export function CreatorHome({
                     poll={p}
                     copied={copiedSlug === p.slug}
                     onCopy={copy}
-                    confirming={confirmingSlug === p.slug}
-                    deleting={deletingSlug === p.slug}
-                    onRequestDelete={(slug) => {
-                      setDeleteError(null);
-                      setConfirmingSlug(slug);
-                    }}
-                    onCancelDelete={() => setConfirmingSlug(null)}
+                    confirming={del.confirmingSlug === p.slug}
+                    deleting={del.deletingSlug === p.slug}
+                    onRequestDelete={(slug) => dispatch({ type: "request", slug })}
+                    onCancelDelete={() => dispatch({ type: "cancel" })}
                     onConfirmDelete={confirmDelete}
                   />
                 </div>

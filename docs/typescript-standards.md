@@ -63,13 +63,18 @@ its *shape* is.
   ephemeral: independent UI flags, toasts, "which row is open", pending/error
   strings. Several unrelated `useState` calls in a component is fine and
   idiomatic — don't merge independent flags into one object just to cut the
-  count (you lose granular updates and end up spread-merging). See
-  `app/CreatorHome.tsx` (copy toast, confirm/delete/removed flags, error).
+  count (you lose granular updates and end up spread-merging). See the
+  copy-link toast (`copiedSlug`) in `app/CreatorHome.tsx`, which stays its own
+  `useState` precisely because it's unrelated to the delete flow next to it.
 
 - **Reach for `useReducer`** when several local pieces move together as one state
   machine — e.g. a `confirming → deleting → removed` flow where transitions
-  should be expressed as named actions rather than a scatter of setters. Keep it
-  local; a reducer is still component state.
+  should be expressed as named actions rather than a scatter of interdependent
+  setters. Keep it local; a reducer is still component state. The reference is
+  the per-card delete flow in `app/CreatorHome.tsx` (`deleteReducer`:
+  `request` / `cancel` / `deleting` / `removed` / `failed`), which folds four
+  interlocking flags — confirming, deleting, removed, error — into one machine
+  while the independent copy toast stays a plain `useState`.
 
 - **Reach for a Zustand store** only when state is **shared across components**,
   or is **complex form/domain state with derived logic and domain actions**. The
