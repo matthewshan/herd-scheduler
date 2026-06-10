@@ -279,6 +279,24 @@ async function driveResults(page: Page, slug: string): Promise<void> {
 }
 
 /**
+ * Results as a guest (Phase 7 refinement): an unauthenticated viewer opens a
+ * still-open poll's results and sees the "Submit yours" CTA in the section
+ * header — their way to the vote screen. The context has no dev-login cookie,
+ * so `viewerHasVoted` is false and the link reads "Submit yours".
+ */
+async function driveResultsGuest(page: Page, slug: string): Promise<void> {
+  await page.goto(`${BASE}/p/${slug}/results`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Sorted by best fit");
+  await wait(page, 900);
+  await page
+    .getByRole("link", { name: /Submit yours/ })
+    .scrollIntoViewIfNeeded();
+  await wait(page, 1400);
+  await page.mouse.wheel(0, 220);
+  await wait(page, 1000);
+}
+
+/**
  * Creator home (Phase 8): the host's "Your polls" list — varied rows (a
  * finalized poll, a leading one, one awaiting its first reply) and a copy-link.
  */
@@ -378,6 +396,13 @@ async function main(): Promise<void> {
     // shows as "Finalized" on the creator home below).
     await record(browser, 7, "results-finalize", "light", (page) =>
       driveResults(page, slug),
+    );
+
+    // Phase 7 refinement — a guest (fresh context, no dev-login) viewing the
+    // results of a still-open poll sees a "Submit yours" CTA back to the vote
+    // screen. Uses bookSlug (has a real breakdown, not finalized).
+    await record(browser, 7, "results-submit-yours", "light", (page) =>
+      driveResultsGuest(page, bookSlug),
     );
 
     // Phase 8 — creator home, light + dark, plus the delete-card animation.
