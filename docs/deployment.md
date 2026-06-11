@@ -32,8 +32,9 @@ running the migrate image to completion first:
 docker run --rm -e DATABASE_URL=postgres://… ghcr.io/matthewshan/herd-scheduler:latest-migrate
 ```
 
-On Kubernetes this is a pre-deploy `Job` (ArgoCD `PreSync` hook in the home
-deployment — see Reference C); on a PaaS it's a release/CI step. `prisma
+On Kubernetes this is a pre-deploy `Job` (in the home deployment, a
+sync-wave-gated ArgoCD `Job` that must complete before the app's wave — see
+Reference C); on a PaaS it's a release/CI step. `prisma
 migrate deploy` is idempotent: applying zero pending migrations is a no-op,
 so running it on every deploy is safe.
 
@@ -133,8 +134,9 @@ The primary target. All cluster wiring lives in the owner-managed
 - **Postgres on the private LAN**, outside the cluster (a VM — provisioning
   is automated in `k3s-homelab`'s Ansible playbook). Direct connection, so
   `DIRECT_URL` stays unset.
-- **Migrations**: the `-migrate` image as an ArgoCD **`PreSync` hook `Job`** —
-  it must succeed before the new app pods roll.
+- **Migrations**: the `-migrate` image as a **sync-wave-gated ArgoCD `Job`**
+  (an earlier wave than the `Deployment`, replaced each sync) — it must
+  succeed before the new app pods roll.
 - **Public HTTPS via Cloudflare Tunnel**: TLS terminates at the edge, the app
   speaks plain HTTP in-cluster. `AUTH_URL` = the public domain,
   `AUTH_TRUST_HOST=true`.
