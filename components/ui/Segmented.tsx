@@ -28,11 +28,7 @@ const ON_TINT: Record<VoteValue, string> = {
 
 // Signature 3-way control. The selected segment cross-fades to its semantic
 // tint and reveals a check glyph; re-tapping the active segment clears it.
-export function Segmented({
-  value,
-  onChange,
-  disabled = false,
-}: SegmentedProps) {
+export function Segmented({ value, onChange, disabled = false }: SegmentedProps) {
   return (
     <div
       role="radiogroup"

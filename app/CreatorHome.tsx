@@ -14,7 +14,12 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { BottomBar, Button, StatusPill, ThemeToggle } from "@/components/ui";
+import {
+  BottomBar,
+  Button,
+  StatusPill,
+  ThemeToggle,
+} from "@/components/ui";
 import { deletePoll } from "@/app/p/[slug]/finalize/actions";
 import type { CreatorPollRow } from "@/lib/polls";
 
@@ -93,11 +98,7 @@ interface BrandMarkProps {
 
 // The brand mark — production uses the real lucide Cat glyph in a brand-tint
 // rounded square (the prototype's 🐱 emoji is a throwaway placeholder).
-function BrandMark({
-  size = 20,
-  box = 34,
-  radius = "rounded-[10px]",
-}: BrandMarkProps) {
+function BrandMark({ size = 20, box = 34, radius = "rounded-[10px]" }: BrandMarkProps) {
   return (
     <span
       className={`flex flex-shrink-0 items-center justify-center bg-brand-tint text-brand ${radius}`}
@@ -180,7 +181,7 @@ function PollCard({
   // screen so you mark your own availability first.
   const target = poll.youVoted ? `/p/${poll.slug}/results` : `/p/${poll.slug}`;
   return (
-    <div className="hover:border-brand/40 overflow-hidden rounded-card border border-border bg-surface shadow-sh-1 transition-colors duration-ds ease-ds">
+    <div className="overflow-hidden rounded-card border border-border bg-surface shadow-sh-1 transition-colors duration-ds ease-ds hover:border-brand/40">
       <Link href={target} className="block px-[16px] pb-3 pt-[14px]">
         <div className="flex items-start justify-between gap-2.5">
           <h2 className="font-display text-[16px] font-bold leading-snug text-fg1">
@@ -295,7 +296,10 @@ export function CreatorHome({
     const url = `${window.location.origin}/p/${slug}`;
     void navigator.clipboard?.writeText(url).catch(() => {});
     setCopiedSlug(slug);
-    setTimeout(() => setCopiedSlug((cur) => (cur === slug ? null : cur)), 1600);
+    setTimeout(
+      () => setCopiedSlug((cur) => (cur === slug ? null : cur)),
+      1600,
+    );
   }
 
   function confirmDelete(slug: string) {
@@ -351,9 +355,7 @@ export function CreatorHome({
           >
             <Users size={26} />
           </span>
-          <h2 className="ds-display mt-4 text-[24px]">
-            You&apos;re all set to vote
-          </h2>
+          <h2 className="ds-display mt-4 text-[24px]">You&apos;re all set to vote</h2>
           <p className="ds-body mt-1 text-[15px] text-fg2">
             Only approved hosts can start polls. Ask {ownerName} to add you —
             then you can make your own. Got a poll link? Open it to mark your
@@ -370,7 +372,7 @@ export function CreatorHome({
       <Header firstName={firstName} isOwner={isOwner} count={polls.length} />
       <main className="mx-auto w-full max-w-[390px] flex-1 px-4 py-4">
         {del.error && (
-          <p className="border-no/30 mb-3 rounded-input border bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
+          <p className="mb-3 rounded-input border border-no/30 bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
             {del.error}
           </p>
         )}
@@ -385,8 +387,8 @@ export function CreatorHome({
                 style={{ transitionDuration: `${DELETE_ANIM_MS}ms` }}
                 className={`grid transition-all ease-ds ${
                   removed
-                    ? "scale-[0.97] grid-rows-[0fr] opacity-0"
-                    : "scale-100 grid-rows-[1fr] opacity-100"
+                    ? "grid-rows-[0fr] scale-[0.97] opacity-0"
+                    : "grid-rows-[1fr] scale-100 opacity-100"
                 }`}
               >
                 <div className="min-h-0 overflow-hidden">
@@ -396,9 +398,7 @@ export function CreatorHome({
                     onCopy={copy}
                     confirming={del.confirmingSlug === p.slug}
                     deleting={del.deletingSlug === p.slug}
-                    onRequestDelete={(slug) =>
-                      dispatch({ type: "request", slug })
-                    }
+                    onRequestDelete={(slug) => dispatch({ type: "request", slug })}
                     onCancelDelete={() => dispatch({ type: "cancel" })}
                     onConfirmDelete={confirmDelete}
                   />

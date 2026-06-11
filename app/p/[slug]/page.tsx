@@ -51,9 +51,7 @@ export default async function VotePage({ params }: VotePageProps) {
 
   // Signed-in voters get their saved ballot pre-filled; guests restore any
   // in-progress votes from a local draft on the client.
-  const savedBallot = user
-    ? await loadBallot(poll.id, { userId: user.id })
-    : {};
+  const savedBallot = user ? await loadBallot(poll.id, { userId: user.id }) : {};
   const hasSavedBallot = Object.keys(savedBallot).length > 0;
   // The creator is presumed available: with no ballot yet (and voting still
   // open), default every slot to "yes" so they just clear the times that don't
