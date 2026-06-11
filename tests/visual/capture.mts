@@ -271,7 +271,10 @@ async function driveResults(page: Page, slug: string): Promise<void> {
   await wait(page, 600);
 
   // Finalize the top (best-fit) slot → banner + pill appear.
-  await page.getByRole("button", { name: "Finalize this time" }).first().click();
+  await page
+    .getByRole("button", { name: "Finalize this time" })
+    .first()
+    .click();
   await page.waitForSelector("text=Final pick & other options");
   await wait(page, 1500);
   await page.mouse.wheel(0, 260);
@@ -306,7 +309,10 @@ async function driveMyPolls(page: Page): Promise<void> {
   await wait(page, 1100);
   await page.mouse.wheel(0, 200);
   await wait(page, 900);
-  await page.getByRole("button", { name: /Copy link/ }).first().click();
+  await page
+    .getByRole("button", { name: /Copy link/ })
+    .first()
+    .click();
   await wait(page, 1500);
   await page.mouse.wheel(0, 200);
   await wait(page, 900);
@@ -328,6 +334,57 @@ async function driveDelete(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.waitForSelector("text=Deleting…").catch(() => {});
   await wait(page, 1800);
+}
+
+/**
+ * Persistent guest identity (Phase 9): a guest votes, leaves, and returns to
+ * the same poll on the same browser — their name is pre-filled, their saved
+ * ballot is hydrated, and re-submitting EDITS their vote (the bar reads
+ * "Update availability"), with the quiet "Not you? Start fresh" escape hatch
+ * visible. One recorded context = one browser, so localStorage (the durable
+ * guest identity) survives the leave-and-return navigation.
+ */
+async function driveGuestReturn(page: Page, slug: string): Promise<void> {
+  // First visit: vote as Priya.
+  await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Which times work for you?");
+  await wait(page, 700);
+  await page.getByLabel("Your name").pressSequentially("Priya", { delay: 70 });
+  await wait(page, 400);
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const picks = ["Yes", "No", "Yes"];
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: picks[i % picks.length], exact: true })
+      .click();
+    await wait(page, 350);
+  }
+  await wait(page, 400);
+  await page.getByRole("button", { name: /Submit availability/ }).click();
+  await page.waitForSelector("text=Saved");
+  await wait(page, 1300);
+
+  // "Close the tab and come back": a fresh load of the same poll. The stored
+  // guest key recognizes Priya — name pre-filled, saved ballot hydrated, and
+  // the shared-device escape hatch shows.
+  await page.goto("about:blank");
+  await wait(page, 500);
+  await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Not you? Start fresh");
+  await wait(page, 1600);
+
+  // Change one answer → submit reads "Update availability" and edits the same
+  // participant (no duplicate responder in the results).
+  await groups
+    .first()
+    .getByRole("radio", { name: "If-need-be", exact: true })
+    .click();
+  await wait(page, 700);
+  await page.getByRole("button", { name: /Update availability/ }).click();
+  await page.waitForSelector("text=Saved");
+  await wait(page, 1500);
 }
 
 async function main(): Promise<void> {
@@ -409,6 +466,16 @@ async function main(): Promise<void> {
     await record(browser, 8, "my-polls", "light", driveMyPolls);
     await record(browser, 8, "my-polls-dark", "dark", driveMyPolls);
     await record(browser, 8, "delete-poll", "light", driveDelete);
+
+    // Phase 9 — persistent guest identity: vote → leave → return (name +
+    // ballot pre-filled) → edit. On its own poll (created after the phase-8
+    // recordings so the earlier lists/tallies are unchanged by it).
+    const triviaSlug = await plain(browser, (p) =>
+      quickCreate(p, "Trivia night at Rosie's", ["27", "28"]),
+    );
+    await record(browser, 9, "guest-return", "light", (page) =>
+      driveGuestReturn(page, triviaSlug),
+    );
   } finally {
     await browser.close();
     rmSync(TMP_DIR, { recursive: true, force: true });

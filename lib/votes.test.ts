@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// In-memory Prisma fake. The current harness mocks the DB (Phase 9 adds the
+// In-memory Prisma fake. The current harness mocks the DB (Phase 11 adds the
 // real-Postgres integration layer); this fake mirrors just enough participant /
 // availability semantics that saveBallot relies on — the per-poll unique
 // constraints, participant.upsert, availability.upsert, and the deleteMany
@@ -10,6 +10,7 @@ const { prismaMock, store } = vi.hoisted(() => {
     id: string;
     pollId: string;
     userId: string | null;
+    guestKey: string | null;
     guestName: string | null;
   }
   interface FakeAvailability {
@@ -44,7 +45,7 @@ const { prismaMock, store } = vi.hoisted(() => {
   }: {
     where: {
       pollId_userId?: { pollId: string; userId: string };
-      pollId_guestName?: { pollId: string; guestName: string };
+      pollId_guestKey?: { pollId: string; guestKey: string };
     };
     include?: { availabilities?: boolean };
   }) {
@@ -54,10 +55,10 @@ const { prismaMock, store } = vi.hoisted(() => {
       p = store.participants.find(
         (x) => x.pollId === pollId && x.userId === userId,
       );
-    } else if (where.pollId_guestName) {
-      const { pollId, guestName } = where.pollId_guestName;
+    } else if (where.pollId_guestKey) {
+      const { pollId, guestKey } = where.pollId_guestKey;
       p = store.participants.find(
-        (x) => x.pollId === pollId && x.guestName === guestName,
+        (x) => x.pollId === pollId && x.guestKey === guestKey,
       );
     }
     if (!p) {
@@ -85,9 +86,14 @@ const { prismaMock, store } = vi.hoisted(() => {
   }: {
     where: {
       pollId_userId?: { pollId: string; userId: string };
-      pollId_guestName?: { pollId: string; guestName: string };
+      pollId_guestKey?: { pollId: string; guestKey: string };
     };
-    create: { pollId: string; userId: string | null; guestName: string | null };
+    create: {
+      pollId: string;
+      userId: string | null;
+      guestKey: string | null;
+      guestName: string | null;
+    };
     update: Partial<FakeParticipant>;
   }) {
     let existing: FakeParticipant | undefined;
@@ -96,10 +102,10 @@ const { prismaMock, store } = vi.hoisted(() => {
       existing = store.participants.find(
         (x) => x.pollId === pollId && x.userId === userId,
       );
-    } else if (where.pollId_guestName) {
-      const { pollId, guestName } = where.pollId_guestName;
+    } else if (where.pollId_guestKey) {
+      const { pollId, guestKey } = where.pollId_guestKey;
       existing = store.participants.find(
-        (x) => x.pollId === pollId && x.guestName === guestName,
+        (x) => x.pollId === pollId && x.guestKey === guestKey,
       );
     }
     if (existing) {
@@ -110,6 +116,7 @@ const { prismaMock, store } = vi.hoisted(() => {
       id: store.nextId("p"),
       pollId: create.pollId,
       userId: create.userId ?? null,
+      guestKey: create.guestKey ?? null,
       guestName: create.guestName ?? null,
     };
     store.participants.push(p);
@@ -139,13 +146,19 @@ const { prismaMock, store } = vi.hoisted(() => {
     create,
     update,
   }: {
-    where: { participantId_timeOptionId: { participantId: string; timeOptionId: string } };
+    where: {
+      participantId_timeOptionId: {
+        participantId: string;
+        timeOptionId: string;
+      };
+    };
     create: { participantId: string; timeOptionId: string; response: string };
     update: { response: string };
   }) {
     const { participantId, timeOptionId } = where.participantId_timeOptionId;
     const existing = store.availabilities.find(
-      (a) => a.participantId === participantId && a.timeOptionId === timeOptionId,
+      (a) =>
+        a.participantId === participantId && a.timeOptionId === timeOptionId,
     );
     if (existing) {
       existing.response = update.response;
@@ -162,8 +175,14 @@ const { prismaMock, store } = vi.hoisted(() => {
   }
 
   const tx = {
-    participant: { findUnique: participantFindUnique, upsert: participantUpsert },
-    availability: { deleteMany: availabilityDeleteMany, upsert: availabilityUpsert },
+    participant: {
+      findUnique: participantFindUnique,
+      upsert: participantUpsert,
+    },
+    availability: {
+      deleteMany: availabilityDeleteMany,
+      upsert: availabilityUpsert,
+    },
   };
 
   const prismaMock = {
@@ -178,11 +197,12 @@ const { prismaMock, store } = vi.hoisted(() => {
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
-import { saveBallot, loadBallot } from "@/lib/votes";
+import { saveBallot, loadBallot, loadGuestRecord } from "@/lib/votes";
 
 const POLL = "poll1";
 const USER = { userId: "user1" };
-const GUEST = { guestName: "Sam" };
+// Guests key on guestKey (the per-browser identity); guestName is just a label.
+const GUEST = { guestKey: "samkey1234567890abcde", guestName: "Sam" };
 
 // Pull the stored Prisma response for a (participant, slot) pair.
 function responseFor(participantId: string, timeOptionId: string) {
@@ -305,28 +325,73 @@ describe("loadBallot", () => {
   });
 });
 
-describe("saveBallot — guest name collision (KNOWN LIMITATION)", () => {
-  it("two guests sharing a name collide on one participant; the later submit overwrites", async () => {
-    // KNOWN LIMITATION — guests key on pollId_guestName, so two different people
-    // who type "Sam" are indistinguishable. Documented in the spec §11 open
-    // questions; the eventual guest-cookie-token fix should flip this test.
+describe("saveBallot — guest identity (Phase 9 guestKey)", () => {
+  it("two guests sharing a display name stay distinct (keyed on guestKey, not name)", async () => {
+    // The pre-Phase-9 KNOWN LIMITATION, fixed: identity is the per-browser
+    // guestKey, so two different people who both type "Sam" no longer collide.
     const personA = await saveBallot({
       pollId: POLL,
-      identity: { guestName: "Sam" },
+      identity: { guestKey: "browserAkey123456789a", guestName: "Sam" },
       ballot: { s1: "yes", s2: "yes" },
     });
     const personB = await saveBallot({
       pollId: POLL,
-      identity: { guestName: "Sam" },
+      identity: { guestKey: "browserBkey123456789b", guestName: "Sam" },
       ballot: { s1: "no" },
     });
 
-    expect(personB.participantId).toBe(personA.participantId);
-    expect(personB.isFirstCast).toBe(false);
+    expect(personB.participantId).not.toBe(personA.participantId);
+    expect(personB.isFirstCast).toBe(true);
+    expect(store.participants).toHaveLength(2);
+    // Person A's ballot is untouched by person B's submit.
+    expect(responseFor(personA.participantId, "s1")).toBe("yes");
+    expect(responseFor(personA.participantId, "s2")).toBe("yes");
+    expect(responseFor(personB.participantId, "s1")).toBe("no");
+  });
+
+  it("a rename on resubmit updates the label on the SAME participant (no fork)", async () => {
+    const first = await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes" },
+    });
+    const renamed = await saveBallot({
+      pollId: POLL,
+      identity: { guestKey: GUEST.guestKey, guestName: "Samantha" },
+      ballot: { s1: "yes" },
+    });
+
+    expect(renamed.participantId).toBe(first.participantId);
+    expect(renamed.isFirstCast).toBe(false);
     expect(store.participants).toHaveLength(1);
-    // Person A's ballot is gone — s1 overwritten, s2 reconciled away.
-    expect(responseFor(personA.participantId, "s1")).toBe("no");
-    expect(responseFor(personA.participantId, "s2")).toBeUndefined();
+    expect(store.participants[0].guestName).toBe("Samantha");
+  });
+
+  it("loadBallot by guestKey returns the guest's saved ballot", async () => {
+    await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes", s2: "maybe" },
+    });
+
+    expect(await loadBallot(POLL, { guestKey: GUEST.guestKey })).toEqual({
+      s1: "yes",
+      s2: "maybe",
+    });
+  });
+
+  it("loadGuestRecord returns ballot + stored label; null for an unknown key", async () => {
+    await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "no" },
+    });
+
+    expect(await loadGuestRecord(POLL, GUEST.guestKey)).toEqual({
+      ballot: { s1: "no" },
+      guestName: "Sam",
+    });
+    expect(await loadGuestRecord(POLL, "someotherkey1234567890")).toBeNull();
   });
 });
 

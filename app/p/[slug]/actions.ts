@@ -5,13 +5,24 @@ import { signIn } from "@/auth";
 import { getSessionUser } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
 import { LIMITS, withinLimit } from "@/lib/limits";
-import { saveBallot, type Ballot } from "@/lib/votes";
+import { isValidGuestKey } from "@/lib/guest";
+import {
+  loadGuestRecord,
+  saveBallot,
+  type Ballot,
+  type GuestRecord,
+} from "@/lib/votes";
 import type { VoteValue } from "@/components/ui";
 
 export interface SubmitVoteInput {
   slug: string;
   /** Display name — required (and only used) for guests; ignored when signed in. */
   guestName?: string;
+  /**
+   * The guest's per-browser identity key (Phase 9) — required (and only used)
+   * for guests; ignored when signed in. Minted client-side, see lib/guest.ts.
+   */
+  guestKey?: string;
   /** timeOptionId → answer. Only marked slots; unmarked slots are omitted. */
   votes: Record<string, VoteValue>;
 }
@@ -51,8 +62,9 @@ export async function submitVote(
   const user = await getSessionUser();
 
   // Guests must name themselves so friends know who voted; signed-in voters use
-  // their account identity and any submitted guestName is ignored.
+  // their account identity and any submitted guestName/guestKey is ignored.
   let guestName: string | null = null;
+  let guestKey: string | null = null;
   if (!user) {
     guestName = input.guestName?.trim() ?? "";
     if (!guestName) {
@@ -64,6 +76,15 @@ export async function submitVote(
         error: `Keep your name under ${LIMITS.guestName} characters.`,
       };
     }
+    // The client always mints a key before submitting (Phase 9), so a missing/
+    // malformed one means a tampered payload, not a real voter path.
+    if (!isValidGuestKey(input.guestKey)) {
+      return {
+        ok: false,
+        error: "Something went off — refresh and try again.",
+      };
+    }
+    guestKey = input.guestKey;
   }
 
   // Harden against a malformed payload: `votes` is typed but arrives from an
@@ -92,7 +113,7 @@ export async function submitVote(
 
   const { isFirstCast } = await saveBallot({
     pollId: poll.id,
-    identity: user ? { userId: user.id } : { guestName },
+    identity: user ? { userId: user.id } : { guestKey, guestName },
     ballot,
   });
 
@@ -107,6 +128,32 @@ export async function submitVote(
   });
 
   return { ok: true, updated: !isFirstCast };
+}
+
+/**
+ * Hydrate a returning guest's saved state (Phase 9). The vote page is a server
+ * component that can't read the browser-held guest key, so the client calls
+ * this on mount with the key from localStorage to pre-fill the name and ballot.
+ * Returns `null` for an unknown poll, a malformed key, or a key with no
+ * participant here. The guest key is an unguessable per-browser credential —
+ * the response only ever reaches the browser that holds it, so this leaks
+ * nothing to other viewers (spec §9). The key itself is never echoed back.
+ */
+export async function loadGuestBallot(
+  slug: string,
+  guestKey: string,
+): Promise<GuestRecord | null> {
+  if (!isValidGuestKey(guestKey)) {
+    return null;
+  }
+  const poll = await prisma.poll.findUnique({
+    where: { slug },
+    select: { id: true },
+  });
+  if (!poll) {
+    return null;
+  }
+  return loadGuestRecord(poll.id, guestKey);
 }
 
 /**

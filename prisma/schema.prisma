@@ -181,18 +181,25 @@ model Participant {
   id        String   @id @default(cuid())
   pollId    String
   userId    String? // null for guests
-  guestName String? // set for guests
+  guestName String? // guest display label only — NOT an identity (Phase 9)
+  // Stable anonymous identity (Phase 9): an opaque, client-minted key held in
+  // the guest's own browser (localStorage `herd-guest-id`) and never shown to
+  // any other viewer. Guests key on it, so two guests who share a display name
+  // stay distinct, and a returning guest's resubmit edits their own row.
+  // Null on legacy/pre-Phase-9 guest rows (un-rebindable) and on user rows.
+  guestKey  String?
   createdAt DateTime @default(now())
 
   poll           Poll           @relation(fields: [pollId], references: [id], onDelete: Cascade)
   user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   availabilities Availability[]
 
-  // One participation per logged-in user per poll, and one per guest name per
+  // One participation per logged-in user per poll, and one per guest key per
   // poll (Postgres treats NULLs as distinct, so guests don't collide on userId
-  // and logged-in voters don't collide on guestName).
+  // and logged-in voters don't collide on guestKey). guestName carries no
+  // uniqueness — two guests may legitimately share a name.
   @@unique([pollId, userId])
-  @@unique([pollId, guestName])
+  @@unique([pollId, guestKey])
 }
 
 model Availability {
