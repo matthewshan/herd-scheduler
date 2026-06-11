@@ -6,7 +6,13 @@ import { requireCreator } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
 import { generateUniqueSlug } from "@/lib/slug";
 import { TIMEZONES, zonedWallTimeToUtc } from "@/lib/time";
-import { LIMITS, withinLimit } from "@/lib/limits";
+import {
+  LIMITS,
+  maxPollsPerCreator,
+  maxSlotsPerPoll,
+  withinLimit,
+} from "@/lib/limits";
+import { checkRateLimit, createPollRule } from "@/lib/rate-limit";
 import { saveBallot, type Ballot } from "@/lib/votes";
 
 // One picked slot from the create form: a calendar day (month 0-indexed, to match
@@ -47,12 +53,34 @@ export async function createPoll(
 ): Promise<CreatePollResult> {
   const user = await requireCreator();
 
+  // Abuse guards (spec §9, Phase 10): a per-creator creation rate, then a
+  // per-creator total-poll cap. Both env-tunable; see lib/rate-limit.ts and
+  // lib/limits.ts.
+  if (!checkRateLimit(`create:${user.id}`, createPollRule())) {
+    return {
+      ok: false,
+      error: "You're creating polls too quickly — try again in a bit.",
+    };
+  }
+  const pollCount = await prisma.poll.count({
+    where: { createdById: user.id },
+  });
+  if (pollCount >= maxPollsPerCreator()) {
+    return {
+      ok: false,
+      error: `You've hit the limit of ${maxPollsPerCreator()} polls — delete one to make room.`,
+    };
+  }
+
   const title = input.title.trim();
   if (!title) {
     return { ok: false, error: "Add a title for your poll." };
   }
   if (!withinLimit(title, LIMITS.title)) {
-    return { ok: false, error: `Keep the title under ${LIMITS.title} characters.` };
+    return {
+      ok: false,
+      error: `Keep the title under ${LIMITS.title} characters.`,
+    };
   }
   if (!VALID_TZ.has(input.timezone)) {
     return { ok: false, error: "Pick a timezone." };
@@ -60,8 +88,8 @@ export async function createPoll(
   if (input.slots.length === 0) {
     return { ok: false, error: "Add at least one time." };
   }
-  if (input.slots.length > LIMITS.slots) {
-    return { ok: false, error: `Pick at most ${LIMITS.slots} times.` };
+  if (input.slots.length > maxSlotsPerPoll()) {
+    return { ok: false, error: `Pick at most ${maxSlotsPerPoll()} times.` };
   }
 
   // Convert each picked range to UTC up front so a bad time label fails before

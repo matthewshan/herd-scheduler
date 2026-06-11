@@ -64,11 +64,31 @@ function findParticipant(
   });
 }
 
+/**
+ * Thrown by saveBallot when admitting a *new* participant would push the poll
+ * past `maxParticipants` (Phase 10 size cap). Existing voters re-submitting
+ * are never blocked — the cap bounds growth, it doesn't lock anyone out of
+ * editing their own ballot.
+ */
+export class ParticipantLimitError extends Error {
+  constructor(readonly max: number) {
+    super(`Poll already has ${max} participants`);
+    this.name = "ParticipantLimitError";
+  }
+}
+
 export interface SaveBallotInput {
   pollId: string;
   identity: ParticipantIdentity;
   /** Already validated to the poll's own timeOptionIds. */
   ballot: Ballot;
+  /**
+   * When set, a submit that would create a new participant is rejected with
+   * `ParticipantLimitError` once the poll has this many participants. Checked
+   * inside the transaction so concurrent first casts can't meaningfully
+   * overshoot. Unset = uncapped (e.g. the host's own creation-time ballot).
+   */
+  maxParticipants?: number;
 }
 
 export interface SaveBallotResult {
@@ -94,14 +114,24 @@ export async function saveBallot({
   pollId,
   identity,
   ballot,
+  maxParticipants,
 }: SaveBallotInput): Promise<SaveBallotResult> {
   return prisma.$transaction(async (tx) => {
-    // Pre-read solely to derive the isFirstCast audit label (vote.cast vs
-    // vote.update). Best-effort under concurrent first submits: two racing
-    // first casts can both read null and both report isFirstCast, but the
-    // upsert below keeps the data correct (one participant, no duplicate-key
-    // throw) — the audit label is non-critical vs. that integrity guarantee.
+    // Pre-read to derive the isFirstCast audit label (vote.cast vs
+    // vote.update) and to gate the participant cap. Best-effort under
+    // concurrent first submits: two racing first casts can both read null and
+    // both report isFirstCast, but the upsert below keeps the data correct
+    // (one participant, no duplicate-key throw) — the audit label is
+    // non-critical vs. that integrity guarantee.
     const existing = await findParticipant(tx, pollId, identity);
+
+    // Phase 10 size cap: only a brand-new participant counts against it.
+    if (existing === null && maxParticipants !== undefined) {
+      const count = await tx.participant.count({ where: { pollId } });
+      if (count >= maxParticipants) {
+        throw new ParticipantLimitError(maxParticipants);
+      }
+    }
 
     // Upsert (not create) so two concurrent first submits from the same
     // identity don't race into a P2002 on the per-poll unique constraint
