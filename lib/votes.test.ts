@@ -174,10 +174,15 @@ const { prismaMock, store } = vi.hoisted(() => {
     return a;
   }
 
+  async function participantCount({ where }: { where: { pollId: string } }) {
+    return store.participants.filter((p) => p.pollId === where.pollId).length;
+  }
+
   const tx = {
     participant: {
       findUnique: participantFindUnique,
       upsert: participantUpsert,
+      count: participantCount,
     },
     availability: {
       deleteMany: availabilityDeleteMany,
@@ -197,7 +202,12 @@ const { prismaMock, store } = vi.hoisted(() => {
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
-import { saveBallot, loadBallot, loadGuestRecord } from "@/lib/votes";
+import {
+  saveBallot,
+  loadBallot,
+  loadGuestRecord,
+  ParticipantLimitError,
+} from "@/lib/votes";
 
 const POLL = "poll1";
 const USER = { userId: "user1" };
@@ -425,5 +435,64 @@ describe("saveBallot — concurrent first submit (item-2 upsert)", () => {
     expect(second.participantId).toBe(first.participantId);
     expect(second.isFirstCast).toBe(false);
     expect(store.participants).toHaveLength(1);
+  });
+});
+
+describe("saveBallot — participant cap (Phase 10 maxParticipants)", () => {
+  it("rejects a NEW participant once the poll is at the cap", async () => {
+    await saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "yes" } });
+    await saveBallot({ pollId: POLL, identity: GUEST, ballot: { s1: "yes" } });
+
+    await expect(
+      saveBallot({
+        pollId: POLL,
+        identity: { guestKey: "thirdkey1234567890abc", guestName: "Riley" },
+        ballot: { s1: "yes" },
+        maxParticipants: 2,
+      }),
+    ).rejects.toThrow(ParticipantLimitError);
+    expect(store.participants).toHaveLength(2);
+  });
+
+  it("never blocks an existing participant from editing their ballot", async () => {
+    await saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "yes" } });
+    await saveBallot({ pollId: POLL, identity: GUEST, ballot: { s1: "yes" } });
+
+    const update = await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "no", s2: "maybe" },
+      maxParticipants: 2,
+    });
+
+    expect(update.isFirstCast).toBe(false);
+    expect(store.participants).toHaveLength(2);
+  });
+
+  it("only counts participants of the same poll against the cap", async () => {
+    await saveBallot({
+      pollId: "otherPoll",
+      identity: USER,
+      ballot: { s1: "yes" },
+    });
+
+    const result = await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes" },
+      maxParticipants: 1,
+    });
+
+    expect(result.isFirstCast).toBe(true);
+  });
+
+  it("is uncapped when maxParticipants is omitted (host creation-time ballot)", async () => {
+    await saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "yes" } });
+    const guest = await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes" },
+    });
+    expect(guest.isFirstCast).toBe(true);
   });
 });

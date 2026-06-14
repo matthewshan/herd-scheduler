@@ -1,14 +1,17 @@
 "use server";
 
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { getSessionUser } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
-import { LIMITS, withinLimit } from "@/lib/limits";
+import { LIMITS, maxParticipantsPerPoll, withinLimit } from "@/lib/limits";
+import { checkRateLimit, clientIpFrom, voteRule } from "@/lib/rate-limit";
 import { isValidGuestKey } from "@/lib/guest";
 import {
   loadGuestRecord,
   saveBallot,
+  ParticipantLimitError,
   type Ballot,
   type GuestRecord,
 } from "@/lib/votes";
@@ -43,6 +46,17 @@ const VALID_VALUES = new Set<VoteValue>(["yes", "maybe", "no"]);
 export async function submitVote(
   input: SubmitVoteInput,
 ): Promise<SubmitVoteResult> {
+  // Abuse guard (spec §9, Phase 10): per-IP submit rate. IP-keyed because
+  // voting is open to anyone with the link — guests have no stable identity an
+  // abuser can't re-mint. Env-tunable; see lib/rate-limit.ts.
+  const ip = clientIpFrom(await headers());
+  if (!checkRateLimit(`vote:${ip}`, voteRule())) {
+    return {
+      ok: false,
+      error: "Too many submissions — give it a minute and try again.",
+    };
+  }
+
   const poll = await prisma.poll.findUnique({
     where: { slug: input.slug },
     select: {
@@ -111,11 +125,23 @@ export async function submitVote(
     return { ok: false, error: "Mark at least one time before submitting." };
   }
 
-  const { isFirstCast } = await saveBallot({
-    pollId: poll.id,
-    identity: user ? { userId: user.id } : { guestKey, guestName },
-    ballot,
-  });
+  let isFirstCast: boolean;
+  try {
+    ({ isFirstCast } = await saveBallot({
+      pollId: poll.id,
+      identity: user ? { userId: user.id } : { guestKey, guestName },
+      ballot,
+      maxParticipants: maxParticipantsPerPoll(),
+    }));
+  } catch (err) {
+    if (err instanceof ParticipantLimitError) {
+      return {
+        ok: false,
+        error: `This poll is full — it already has ${err.max} voters.`,
+      };
+    }
+    throw err;
+  }
 
   await logAction({
     action: isFirstCast ? AUDIT_ACTIONS.voteCast : AUDIT_ACTIONS.voteUpdate,

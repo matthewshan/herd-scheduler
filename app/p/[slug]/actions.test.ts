@@ -9,10 +9,21 @@ vi.mock("@/lib/prisma", () => ({
 }));
 vi.mock("@/auth", () => ({ signIn: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getSessionUser: vi.fn() }));
-vi.mock("@/lib/votes", () => ({
-  saveBallot: vi.fn(),
-  loadGuestRecord: vi.fn(),
+// Server actions read the client IP via next/headers, which only exists inside
+// a real request scope — stub a stable forwarded address.
+vi.mock("next/headers", () => ({
+  headers: vi.fn(async () => new Headers({ "x-forwarded-for": "203.0.113.9" })),
 }));
+vi.mock("@/lib/votes", async () => {
+  // The real ParticipantLimitError class so the action's instanceof check works.
+  const actual =
+    await vi.importActual<typeof import("@/lib/votes")>("@/lib/votes");
+  return {
+    ParticipantLimitError: actual.ParticipantLimitError,
+    saveBallot: vi.fn(),
+    loadGuestRecord: vi.fn(),
+  };
+});
 vi.mock("@/lib/access", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/access")>("@/lib/access");
@@ -21,9 +32,10 @@ vi.mock("@/lib/access", async () => {
 
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { saveBallot } from "@/lib/votes";
+import { saveBallot, ParticipantLimitError } from "@/lib/votes";
 import { logAction, AUDIT_ACTIONS } from "@/lib/access";
 import { LIMITS } from "@/lib/limits";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { submitVote } from "./actions";
 
 const pollFindUnique = vi.mocked(prisma.poll.findUnique);
@@ -46,6 +58,7 @@ function setOpenPoll() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRateLimits(); // the limiter is module-level state shared across tests
   setOpenPoll();
   sessionUser.mockResolvedValue(null); // guest by default
   saveBallotMock.mockResolvedValue({ participantId: "p1", isFirstCast: true });
@@ -255,6 +268,57 @@ describe("submitVote — audit action", () => {
     expect(res).toEqual({ ok: true, updated: true });
     expect(logActionMock).toHaveBeenCalledWith(
       expect.objectContaining({ action: AUDIT_ACTIONS.voteUpdate }),
+    );
+  });
+});
+
+describe("submitVote — abuse guards (Phase 10)", () => {
+  afterEach(() => {
+    delete process.env.RATE_LIMIT_VOTE_MAX;
+  });
+
+  it("rejects a submit past the per-IP rate limit", async () => {
+    process.env.RATE_LIMIT_VOTE_MAX = "1";
+    const input = {
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" as const },
+    };
+
+    expect((await submitVote(input)).ok).toBe(true);
+    const second = await submitVote(input);
+    expect(second).toEqual({
+      ok: false,
+      error: expect.stringContaining("Too many submissions"),
+    });
+    expect(saveBallotMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a friendly error when the poll is at its participant cap", async () => {
+    saveBallotMock.mockRejectedValue(new ParticipantLimitError(250));
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: expect.stringContaining("full"),
+    });
+    expect(logActionMock).not.toHaveBeenCalled();
+  });
+
+  it("passes the participant cap through to saveBallot", async () => {
+    await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(saveBallotMock).toHaveBeenCalledWith(
+      expect.objectContaining({ maxParticipants: 250 }),
     );
   });
 });
