@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useReducer, useState, useTransition } from "react";
 import {
-  Cat,
   Check,
   Clock,
   Copy,
@@ -14,16 +13,10 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import {
-  BottomBar,
-  Button,
-  StatusPill,
-  ThemeToggle,
-} from "@/components/ui";
+import { BottomBar, Button, StatusPill, ThemeToggle } from "@/components/ui";
 import { deletePoll } from "@/app/p/[slug]/finalize/actions";
-import type { CreatorPollRow } from "@/lib/polls";
-
-export type CreatorHomeVariant = "list" | "empty" | "noncreator";
+import type { CreatorPollRow, PublicPollSummary } from "@/lib/polls";
+import { BrandMark, PollSummaryCard } from "./PollSummaryCard";
 
 // Duration of the delete card's collapse+fade. Kept as a constant so the CSS
 // transition and the "refresh after it lands" timer can't drift apart.
@@ -83,32 +76,14 @@ function deleteReducer(state: DeleteState, action: DeleteAction): DeleteState {
 export interface CreatorHomeProps {
   firstName: string;
   isOwner: boolean;
-  variant: CreatorHomeVariant;
+  /** Whether this signed-in user may create polls (gates the "Your polls" tab). */
+  mayCreate: boolean;
   /** Owner's first name — for the non-creator "ask {owner}" copy. */
   ownerName: string;
-  polls: CreatorPollRow[];
-}
-
-interface BrandMarkProps {
-  size?: number;
-  /** Diameter of the rounded square. */
-  box?: number;
-  radius?: string;
-}
-
-// The brand mark — production uses the real lucide Cat glyph in a brand-tint
-// rounded square (the prototype's 🐱 emoji is a throwaway placeholder).
-function BrandMark({ size = 20, box = 34, radius = "rounded-[10px]" }: BrandMarkProps) {
-  return (
-    <span
-      className={`flex flex-shrink-0 items-center justify-center bg-brand-tint text-brand ${radius}`}
-      style={{ width: box, height: box }}
-      role="img"
-      aria-label="Herd Scheduler"
-    >
-      <Cat size={size} />
-    </span>
-  );
+  /** Polls you created (the "Your polls" tab). */
+  created: CreatorPollRow[];
+  /** Polls you voted in but didn't create (the "Joined" tab). */
+  joined: PublicPollSummary[];
 }
 
 interface HeaderProps {
@@ -181,7 +156,7 @@ function PollCard({
   // screen so you mark your own availability first.
   const target = poll.youVoted ? `/p/${poll.slug}/results` : `/p/${poll.slug}`;
   return (
-    <div className="overflow-hidden rounded-card border border-border bg-surface shadow-sh-1 transition-colors duration-ds ease-ds hover:border-brand/40">
+    <div className="hover:border-brand/40 overflow-hidden rounded-card border border-border bg-surface shadow-sh-1 transition-colors duration-ds ease-ds">
       <Link href={target} className="block px-[16px] pb-3 pt-[14px]">
         <div className="flex items-start justify-between gap-2.5">
           <h2 className="font-display text-[16px] font-bold leading-snug text-fg1">
@@ -277,29 +252,62 @@ function PollCard({
   );
 }
 
-// The signed-in creator's home (Phase 7.5): the polls you created, newest first.
-// Three states — your list, the empty state, and the non-creator state for a
-// signed-in person who can't start polls.
+type HomeTab = "yours" | "joined";
+
+interface TabButtonProps {
+  active: boolean;
+  label: string;
+  count: number;
+  onClick: () => void;
+}
+
+// Segmented-control tab — "Your polls" / "Joined". Lightweight, token-styled.
+function TabButton({ active, label, count, onClick }: TabButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-[8px] py-2 font-body text-[13.5px] font-semibold transition-colors duration-ds ease-ds ${
+        active ? "bg-surface text-fg1 shadow-sh-1" : "text-fg2 hover:text-fg1"
+      }`}
+    >
+      {label}
+      {count > 0 && (
+        <span
+          className={`tnum rounded-full px-1.5 text-[11px] font-bold ${
+            active ? "bg-brand-tint text-brand" : "bg-surface-2 text-fg3"
+          }`}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// The signed-in home (Phase 8 + 12): a creator's polls, split into "Your polls"
+// (created) and "Joined" (voted in elsewhere) tabs. A signed-in non-creator —
+// who can't start polls — sees the Joined list on its own.
 export function CreatorHome({
   firstName,
   isOwner,
-  variant,
+  mayCreate,
   ownerName,
-  polls,
+  created,
+  joined,
 }: CreatorHomeProps) {
   const router = useRouter();
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
   const [del, dispatch] = useReducer(deleteReducer, initialDeleteState);
   const [, startDelete] = useTransition();
+  const [tab, setTab] = useState<HomeTab>("yours");
 
   function copy(slug: string) {
     const url = `${window.location.origin}/p/${slug}`;
     void navigator.clipboard?.writeText(url).catch(() => {});
     setCopiedSlug(slug);
-    setTimeout(
-      () => setCopiedSlug((cur) => (cur === slug ? null : cur)),
-      1600,
-    );
+    setTimeout(() => setCopiedSlug((cur) => (cur === slug ? null : cur)), 1600);
   }
 
   function confirmDelete(slug: string) {
@@ -321,92 +329,144 @@ export function CreatorHome({
     });
   }
 
-  // ---- empty: approved creator, no polls yet ----
-  if (variant === "empty") {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <Header firstName={firstName} isOwner={isOwner} count={0} />
-        <main className="mx-auto flex w-full max-w-[390px] flex-1 flex-col items-center justify-center px-7 text-center">
-          <BrandMark size={34} box={64} radius="rounded-[20px]" />
-          <h2 className="ds-display mt-4 text-[24px]">No polls yet</h2>
-          <p className="ds-body mt-1 text-[15px] text-fg2">
-            Start your first one and drop the link in the group chat — your
-            friends pick what works.
-          </p>
-          <Button block className="mt-6" onClick={() => router.push("/create")}>
-            <Plus size={18} />
-            New poll
-          </Button>
-        </main>
-      </div>
-    );
-  }
+  const joinedList = (
+    <div className="flex flex-col gap-2.5">
+      {joined.map((p) => (
+        <PollSummaryCard key={p.slug} poll={p} />
+      ))}
+    </div>
+  );
 
-  // ---- non-creator: signed in, but not an approved host ----
-  if (variant === "noncreator") {
+  // ---- non-creator: signed in, but not an approved host — Joined-only ----
+  if (!mayCreate) {
+    if (joined.length === 0) {
+      return (
+        <div className="flex min-h-screen flex-col">
+          <Header firstName={firstName} isOwner={isOwner} count={null} />
+          <main className="mx-auto flex w-full max-w-[390px] flex-1 flex-col items-center justify-center px-7 text-center">
+            <span
+              className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-surface-2 text-fg2"
+              role="img"
+              aria-label="Voting"
+            >
+              <Users size={26} />
+            </span>
+            <h2 className="ds-display mt-4 text-[24px]">
+              You&apos;re all set to vote
+            </h2>
+            <p className="ds-body mt-1 text-[15px] text-fg2">
+              Only approved hosts can start polls. Ask {ownerName} to add you —
+              then you can make your own. Got a poll link? Open it to mark your
+              availability.
+            </p>
+          </main>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen flex-col">
         <Header firstName={firstName} isOwner={isOwner} count={null} />
-        <main className="mx-auto flex w-full max-w-[390px] flex-1 flex-col items-center justify-center px-7 text-center">
-          <span
-            className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-surface-2 text-fg2"
-            role="img"
-            aria-label="Voting"
-          >
-            <Users size={26} />
-          </span>
-          <h2 className="ds-display mt-4 text-[24px]">You&apos;re all set to vote</h2>
-          <p className="ds-body mt-1 text-[15px] text-fg2">
-            Only approved hosts can start polls. Ask {ownerName} to add you —
-            then you can make your own. Got a poll link? Open it to mark your
-            availability.
+        <main className="mx-auto w-full max-w-[390px] flex-1 px-4 py-4">
+          <p className="mb-3 font-body text-[13px] text-fg2">
+            Polls you&apos;ve joined. Want to start your own? Ask {ownerName} to
+            add you.
           </p>
+          {joinedList}
+          <div className="h-2" />
         </main>
       </div>
     );
   }
 
-  // ---- default: list of your polls ----
+  // ---- creator: tabbed "Your polls" / "Joined" ----
   return (
     <div className="flex min-h-screen flex-col">
-      <Header firstName={firstName} isOwner={isOwner} count={polls.length} />
+      <Header firstName={firstName} isOwner={isOwner} count={created.length} />
       <main className="mx-auto w-full max-w-[390px] flex-1 px-4 py-4">
-        {del.error && (
-          <p className="mb-3 rounded-input border border-no/30 bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
-            {del.error}
-          </p>
-        )}
-        <div className="flex flex-col gap-2.5">
-          {polls.map((p) => {
-            const removed = del.removedSlugs.has(p.slug);
-            // grid-rows 1fr→0fr collapses the row height while it fades, so the
-            // cards below slide up smoothly as the deleted one drops out.
-            return (
-              <div
-                key={p.slug}
-                style={{ transitionDuration: `${DELETE_ANIM_MS}ms` }}
-                className={`grid transition-all ease-ds ${
-                  removed
-                    ? "grid-rows-[0fr] scale-[0.97] opacity-0"
-                    : "grid-rows-[1fr] scale-100 opacity-100"
-                }`}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <PollCard
-                    poll={p}
-                    copied={copiedSlug === p.slug}
-                    onCopy={copy}
-                    confirming={del.confirmingSlug === p.slug}
-                    deleting={del.deletingSlug === p.slug}
-                    onRequestDelete={(slug) => dispatch({ type: "request", slug })}
-                    onCancelDelete={() => dispatch({ type: "cancel" })}
-                    onConfirmDelete={confirmDelete}
-                  />
-                </div>
-              </div>
-            );
-          })}
+        <div className="mb-3.5 flex gap-1 rounded-input bg-surface-2 p-1">
+          <TabButton
+            active={tab === "yours"}
+            label="Your polls"
+            count={created.length}
+            onClick={() => setTab("yours")}
+          />
+          <TabButton
+            active={tab === "joined"}
+            label="Joined"
+            count={joined.length}
+            onClick={() => setTab("joined")}
+          />
         </div>
+
+        {tab === "yours" ? (
+          <>
+            {del.error && (
+              <p className="border-no/30 mb-3 rounded-input border bg-no-tint px-3 py-2 font-body text-[13px] text-no-ink">
+                {del.error}
+              </p>
+            )}
+            {created.length === 0 ? (
+              <div className="flex flex-col items-center px-3 py-10 text-center">
+                <BrandMark size={30} box={56} radius="rounded-[18px]" />
+                <h2 className="ds-display mt-4 text-[20px]">No polls yet</h2>
+                <p className="ds-body mt-1 text-[14px] text-fg2">
+                  Start your first one and drop the link in the group chat —
+                  your friends pick what works.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {created.map((p) => {
+                  const removed = del.removedSlugs.has(p.slug);
+                  // grid-rows 1fr→0fr collapses the row height while it fades,
+                  // so the cards below slide up smoothly as it drops out.
+                  return (
+                    <div
+                      key={p.slug}
+                      style={{ transitionDuration: `${DELETE_ANIM_MS}ms` }}
+                      className={`grid transition-all ease-ds ${
+                        removed
+                          ? "scale-[0.97] grid-rows-[0fr] opacity-0"
+                          : "scale-100 grid-rows-[1fr] opacity-100"
+                      }`}
+                    >
+                      <div className="min-h-0 overflow-hidden">
+                        <PollCard
+                          poll={p}
+                          copied={copiedSlug === p.slug}
+                          onCopy={copy}
+                          confirming={del.confirmingSlug === p.slug}
+                          deleting={del.deletingSlug === p.slug}
+                          onRequestDelete={(slug) =>
+                            dispatch({ type: "request", slug })
+                          }
+                          onCancelDelete={() => dispatch({ type: "cancel" })}
+                          onConfirmDelete={confirmDelete}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        ) : joined.length === 0 ? (
+          <div className="flex flex-col items-center px-3 py-10 text-center">
+            <span
+              className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-surface-2 text-fg2"
+              role="img"
+              aria-label="Joined polls"
+            >
+              <Users size={24} />
+            </span>
+            <h2 className="ds-display mt-4 text-[20px]">Nothing joined yet</h2>
+            <p className="ds-body mt-1 text-[14px] text-fg2">
+              Polls you vote in — from links friends share — show up here.
+            </p>
+          </div>
+        ) : (
+          joinedList
+        )}
         <div className="h-2" />
       </main>
       <BottomBar>

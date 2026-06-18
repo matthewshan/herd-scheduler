@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { CalendarPlus, Check, Clock, Pencil, Users } from "lucide-react";
 import {
   AppBar,
   AvatarStack,
   Button,
   Pill,
+  ShareButton,
   SlotCard,
   StackedBar,
   Tally,
   ThemeToggle,
   TzChip,
 } from "@/components/ui";
+import { recordVisit } from "@/lib/guest-history";
 import { clearFinalization, finalizePoll } from "../finalize/actions";
 
 // One slot's results, pre-formatted in the poll's zone server-side.
@@ -76,6 +78,11 @@ export function ResultsView({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Remember this poll in the browser's "looked at" history for the guest home.
+  useEffect(() => {
+    recordVisit(slug, title);
+  }, [slug, title]);
+
   const hasResponses = respondedCount > 0;
 
   function run(action: () => Promise<{ ok: boolean; error?: string }>) {
@@ -100,7 +107,12 @@ export function ResultsView({
         // (no dashboard) goes back to the voting screen instead.
         homeHref={isHost ? "/" : undefined}
         backHref={isHost ? undefined : `/p/${slug}`}
-        right={<ThemeToggle />}
+        right={
+          <>
+            <ShareButton slug={slug} />
+            <ThemeToggle />
+          </>
+        }
         hostLine={
           <>
             <span className="inline-flex items-center gap-1">

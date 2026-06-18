@@ -18,7 +18,11 @@ export interface CreatorPollLead {
   label: string;
 }
 
-export interface CreatorPollRow {
+/**
+ * Aggregate-only poll summary for a home-screen card. Holds no voter identity —
+ * safe to surface to a guest (visited-poll home) or for a poll you only joined.
+ */
+export interface PublicPollSummary {
   slug: string;
   title: string;
   status: PollDisplayStatus;
@@ -26,13 +30,16 @@ export interface CreatorPollRow {
   span: string;
   /** Distinct participants with ≥1 availability (blank submits don't count). */
   responded: number;
+  /** Leading/finalized time, or null when there are no responses yet. */
+  lead: CreatorPollLead | null;
+}
+
+export interface CreatorPollRow extends PublicPollSummary {
   /**
    * Whether the viewing creator has cast their own ballot in this poll. Drives
    * the card's default destination: voted → results, not yet → the vote screen.
    */
   youVoted: boolean;
-  /** Leading/finalized time, or null when there are no responses yet. */
-  lead: CreatorPollLead | null;
 }
 
 // "finalized" is derived (a final pick is set), overriding the open/closed enum.
@@ -43,17 +50,12 @@ function displayStatus(poll: PollWithResults): PollDisplayStatus {
   return poll.status === "closed" ? "closed" : "open";
 }
 
-function toRow(poll: PollWithResults, viewerId: string): CreatorPollRow {
+// The aggregate, identity-free core of a card row — shared by every home list.
+function toSummary(poll: PollWithResults): PublicPollSummary {
   const results = summarizeResults(poll);
   const span = formatSpan(
     poll.timeOptions.map((t) => t.startTime),
     poll.timezone,
-  );
-
-  // Has the viewing creator cast their own ballot? A participant keyed to their
-  // userId with ≥1 availability row — blank submits (no rows) don't count.
-  const youVoted = poll.participants.some(
-    (p) => p.userId === viewerId && p.availabilities.length > 0,
   );
 
   let lead: CreatorPollLead | null = null;
@@ -71,9 +73,17 @@ function toRow(poll: PollWithResults, viewerId: string): CreatorPollRow {
     status: displayStatus(poll),
     span,
     responded: results.respondedCount,
-    youVoted,
     lead,
   };
+}
+
+function toRow(poll: PollWithResults, viewerId: string): CreatorPollRow {
+  // Has the viewing creator cast their own ballot? A participant keyed to their
+  // userId with ≥1 availability row — blank submits (no rows) don't count.
+  const youVoted = poll.participants.some(
+    (p) => p.userId === viewerId && p.availabilities.length > 0,
+  );
+  return { ...toSummary(poll), youVoted };
 }
 
 /**
@@ -89,4 +99,45 @@ export async function listPollsForCreator(
     include: pollResultsInclude,
   });
   return polls.map((poll) => toRow(poll, userId));
+}
+
+/**
+ * Polls a signed-in user has *joined* — voted in someone else's poll (a
+ * Participant row keyed to their userId with ≥1 availability), excluding polls
+ * they created (those live under "your polls"). Newest first. Aggregate-only.
+ */
+export async function listPollsJoined(
+  userId: string,
+): Promise<PublicPollSummary[]> {
+  const polls = await prisma.poll.findMany({
+    where: {
+      createdById: { not: userId },
+      participants: { some: { userId, availabilities: { some: {} } } },
+    },
+    orderBy: { createdAt: "desc" },
+    include: pollResultsInclude,
+  });
+  return polls.map(toSummary);
+}
+
+/**
+ * Public summaries for a set of slugs, returned in the same order as the input
+ * (callers pass them in recency order). Not-found slugs (e.g. deleted polls) are
+ * silently omitted. Aggregate-only — powers the guest "looked at" home, so it
+ * exposes no voter identity and needs no auth.
+ */
+export async function listPollSummariesBySlug(
+  slugs: string[],
+): Promise<PublicPollSummary[]> {
+  if (slugs.length === 0) {
+    return [];
+  }
+  const polls = await prisma.poll.findMany({
+    where: { slug: { in: slugs } },
+    include: pollResultsInclude,
+  });
+  const bySlug = new Map(polls.map((p) => [p.slug, toSummary(p)]));
+  return slugs
+    .map((slug) => bySlug.get(slug))
+    .filter((s): s is PublicPollSummary => s !== undefined);
 }

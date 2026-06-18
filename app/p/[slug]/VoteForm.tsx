@@ -10,6 +10,7 @@ import {
   Button,
   Input,
   Segmented,
+  ShareButton,
   SlotCard,
   ThemeToggle,
   TzChip,
@@ -20,6 +21,7 @@ import {
   GUEST_NAME_STORAGE_KEY,
   mintGuestKey,
 } from "@/lib/guest";
+import { recordVisit } from "@/lib/guest-history";
 import { LIMITS } from "@/lib/limits";
 import { loadGuestBallot, submitVote, signInToVote } from "./actions";
 
@@ -148,6 +150,11 @@ export function VoteForm({
   // hydrated saved ballot > empty. Runs once.
   const restoredRef = useRef(false);
   useEffect(() => {
+    // Remember this poll in the browser's "looked at" history so it shows up on
+    // the guest home. Records for everyone; only surfaced on the guest/non-creator
+    // home (harmless for hosts).
+    recordVisit(slug, title);
+
     try {
       const raw = localStorage.getItem(draftKey(slug));
       if (raw) {
@@ -203,7 +210,7 @@ export function VoteForm({
         );
       }
     });
-  }, [slug, isLoggedIn]);
+  }, [slug, title, isLoggedIn]);
 
   // Persist the working draft as it changes (skip the initial render so we don't
   // clobber a draft before restoring it). Cleared on a successful submit.
@@ -343,7 +350,12 @@ export function VoteForm({
       <AppBar
         title={title}
         homeHref={isHost ? "/" : undefined}
-        right={<ThemeToggle />}
+        right={
+          <>
+            <ShareButton slug={slug} />
+            <ThemeToggle />
+          </>
+        }
         hostLine={
           <>
             <span>{hostFirstName} wants to find a time</span>

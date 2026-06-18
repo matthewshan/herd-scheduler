@@ -28,3 +28,4 @@ export { MiniCalendar } from "./MiniCalendar";
 export { AppBar } from "./AppBar";
 export { BottomBar } from "./BottomBar";
 export { ThemeToggle } from "./ThemeToggle";
+export { ShareButton } from "./ShareButton";
