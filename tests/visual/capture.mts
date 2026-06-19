@@ -398,6 +398,45 @@ async function driveGuestReturn(page: Page, slug: string): Promise<void> {
   await wait(page, 1500);
 }
 
+/**
+ * Guest → account claim (Phase 12): a guest votes, then signs in via the inline
+ * affordance, and their guest ballot is adopted into the account — it stays
+ * marked and the submit bar reads "Update availability" (not a fresh "Submit").
+ * Sign-in is the dev-login bypass standing in for the Google OAuth round-trip;
+ * crucially it's the *same* browser context, so the localStorage guestKey
+ * survives and the on-mount claim rebinds the guest's participation to the user.
+ */
+async function driveGuestClaim(page: Page, slug: string): Promise<void> {
+  // First: vote as a guest (Dana).
+  await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Which times work for you?");
+  await wait(page, 700);
+  await page.getByLabel("Your name").pressSequentially("Dana", { delay: 70 });
+  await wait(page, 400);
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const picks = ["Yes", "If-need-be", "Yes"];
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: picks[i % picks.length], exact: true })
+      .click();
+    await wait(page, 350);
+  }
+  await wait(page, 400);
+  await page.getByRole("button", { name: /Submit availability/ }).click();
+  await page.waitForSelector("text=Saved");
+  await wait(page, 1400);
+
+  // Now "sign in" (the inline Google affordance → OAuth; here the dev-login
+  // bypass) and return to the same poll. The account adopts the guest ballot:
+  // the answers stay marked and the bar flips to "Update availability".
+  await devLoginAs(page, "dana@example.com", "Dana Lee", `/p/${slug}`);
+  await page.waitForSelector("text=Which times work for you?");
+  await page.waitForSelector("text=Update availability");
+  await wait(page, 1900);
+}
+
 /** Authenticate as an arbitrary dev-login identity (not just the owner). */
 async function devLoginAs(
   page: Page,
@@ -581,15 +620,27 @@ async function main(): Promise<void> {
       await wait(page, 1300);
     });
 
-    // Always-on share button: the app-bar icon copies the poll link and confirms
-    // with a "Link copied" toast — available to guests, on every poll screen.
+    // Always-on share button: the app-bar icon shares/copies the poll link. In
+    // a headless context (no Web Share API) it falls back to the Clipboard API
+    // and confirms with a "Link copied" toast — available to guests, on every
+    // poll screen.
     await record(browser, 12, "share-button", "light", async (page) => {
       await page.goto(`${BASE}/p/${bookSlug}`, { waitUntil: "networkidle" });
       await wait(page, 1000);
-      await page.getByRole("button", { name: "Copy link to share" }).click();
+      await page.getByRole("button", { name: "Share or copy link" }).click();
       await page.waitForSelector("text=Link copied");
       await wait(page, 1700);
     });
+
+    // Guest → account claim: a guest votes, then signs in, and the guest ballot
+    // is tied to the account (stays marked, bar reads "Update"). Its own poll so
+    // it doesn't disturb the lists/tallies recorded above.
+    const studySlug = await plain(browser, (p) =>
+      quickCreate(p, "Dana's study group 📚", ["8", "9", "10"]),
+    );
+    await record(browser, 12, "guest-claim", "light", (page) =>
+      driveGuestClaim(page, studySlug),
+    );
 
     // Signed-in home: the "Your polls" / "Joined" segmented tabs. Alex sees the
     // polls they created, switches to the poll they joined (Taylor's), and back.

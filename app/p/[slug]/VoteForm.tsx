@@ -157,12 +157,16 @@ export function VoteForm({
     // home (harmless for hosts).
     recordVisit(slug, title);
 
+    // True when a local draft (the voter's latest unsaved work) was restored —
+    // it must win over anything we load/claim from the server below.
+    let restoredDraft = false;
     try {
       const raw = localStorage.getItem(draftKey(slug));
       if (raw) {
         const draft = JSON.parse(raw) as VoteDraft;
         if (draft.votes && Object.keys(draft.votes).length > 0) {
           setVotes(draft.votes);
+          restoredDraft = true;
         }
         if (!isLoggedIn && draft.name) {
           setGuestName(draft.name);
@@ -193,8 +197,11 @@ export function VoteForm({
         }
         const claimed = res.ballot;
         setEverSubmitted(true);
-        // Don't clobber a restored draft (the voter's latest unsaved work).
-        setVotes((prev) => (Object.keys(prev).length > 0 ? prev : claimed));
+        // The claimed ballot is the account's full, merged server state, so it
+        // supersedes the server-prefilled votes — but never a restored draft.
+        if (!restoredDraft) {
+          setVotes(claimed);
+        }
       });
       return;
     }
