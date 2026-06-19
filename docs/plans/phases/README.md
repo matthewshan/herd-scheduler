@@ -19,6 +19,7 @@ everything it needs without reading the others end-to-end.
 | 9 | [Persistent guest identity](phase-9-guest-identity.md) | A guest is remembered on their device — name pre-filled, prior ballot reloaded & editable | 6, 7 | ☑ |
 | 10 | [Deploy hardening + Phase 2 backlog](phase-10-deploy-phase2.md) | Production-ready container/ops + documented backlog | 7 | ☑ |
 | 11 | [Automated testing](phase-11-testing.md) | First test suite — access-control integration + a Playwright smoke layer, in CI | 4 (extends with 5–7) | ☐ |
+| 12 | [Guest home, "your polls vs joined", share button, release image](phase-12-guest-home-share-release.md) | Guest landing + signed-in tab split, always-on share icon, release-triggered image publish | 7, 8, 9, 10 | ☐ |
 
 ## Dependency graph
 

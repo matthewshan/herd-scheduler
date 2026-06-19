@@ -55,7 +55,12 @@ function webmToGif(webmPath: string, gifPath: string): void {
     "[s0]palettegen=max_colors=128[p]",
     "[s1][p]paletteuse=dither=bayer:bayer_scale=3",
   ].join(",");
-  execFileSync("ffmpeg", ["-y", "-i", webmPath, "-vf", filters, gifPath], {
+  // Resolve ffmpeg from $FFMPEG when set, else the one on PATH. This lets
+  // platforms without a full system ffmpeg (e.g. Windows N editions, where the
+  // only build around is Playwright's stripped one missing palettegen) point at
+  // a local static build without putting it on PATH.
+  const ffmpeg = process.env.FFMPEG ?? "ffmpeg";
+  execFileSync(ffmpeg, ["-y", "-i", webmPath, "-vf", filters, gifPath], {
     stdio: "ignore",
   });
 }
@@ -118,6 +123,11 @@ async function driveCreate(page: Page): Promise<string> {
     delay: 25,
   });
   await wait(page, 400);
+
+  // Move to next month so the hard-coded day numbers are always in the future,
+  // regardless of what day the capture runs (past days render disabled).
+  await page.getByRole("button", { name: "Next month" }).click();
+  await wait(page, 350);
 
   // Pick a few days, then add them at the default 7:00 PM–10:00 PM range.
   for (const day of ["12", "13", "19"]) {
@@ -247,6 +257,7 @@ async function quickCreate(
   await devLogin(page, "/create");
   await page.waitForSelector("#poll-title");
   await page.locator("#poll-title").fill(title);
+  await page.getByRole("button", { name: "Next month" }).click();
   for (const day of days) {
     await page.getByRole("button", { name: day, exact: true }).click();
   }
@@ -387,6 +398,67 @@ async function driveGuestReturn(page: Page, slug: string): Promise<void> {
   await wait(page, 1500);
 }
 
+/** Authenticate as an arbitrary dev-login identity (not just the owner). */
+async function devLoginAs(
+  page: Page,
+  email: string,
+  name: string,
+  to: string,
+): Promise<void> {
+  const url = `${BASE}/api/dev/login?email=${encodeURIComponent(
+    email,
+  )}&name=${encodeURIComponent(name)}&callbackUrl=${encodeURIComponent(to)}`;
+  await page.goto(url, { waitUntil: "networkidle" });
+}
+
+/**
+ * Create a poll as a specific dev-login host (data-seeding). Used to seed a poll
+ * owned by someone *other* than the owner, so the owner's "Joined" tab has a row.
+ * Needs ALLOWLIST_ENABLED=false for a non-owner to pass requireCreator.
+ */
+async function quickCreateAs(
+  page: Page,
+  email: string,
+  name: string,
+  title: string,
+  days: string[],
+): Promise<string> {
+  await devLoginAs(page, email, name, "/create");
+  await page.waitForSelector("#poll-title");
+  await page.locator("#poll-title").fill(title);
+  await page.getByRole("button", { name: "Next month" }).click();
+  for (const day of days) {
+    await page.getByRole("button", { name: day, exact: true }).click();
+  }
+  await page.getByRole("button", { name: /^Add \d+ days? at/ }).click();
+  await page.getByRole("button", { name: "Create poll" }).click();
+  await page.waitForSelector("text=Poll created");
+  const shareText = await page.getByText(/\/p\//).first().innerText();
+  return shareText.split("/p/")[1].trim();
+}
+
+/** Cast a ballot while signed in as a specific user (no guest name field). */
+async function voteAsUser(
+  page: Page,
+  email: string,
+  name: string,
+  slug: string,
+  picks: string[],
+): Promise<void> {
+  await devLoginAs(page, email, name, `/p/${slug}`);
+  await page.waitForSelector("text=Which times work for you?");
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: picks[i % picks.length], exact: true })
+      .click();
+  }
+  await page.getByRole("button", { name: /Submit availability/ }).click();
+  await page.waitForSelector("text=Saved");
+}
+
 async function main(): Promise<void> {
   rmSync(TMP_DIR, { recursive: true, force: true });
   mkdirSync(TMP_DIR, { recursive: true });
@@ -415,6 +487,8 @@ async function main(): Promise<void> {
         delay: 40,
       });
       await wait(page, 300);
+      await page.getByRole("button", { name: "Next month" }).click();
+      await wait(page, 250);
       for (const day of ["12", "13", "19"]) {
         await page.getByRole("button", { name: day, exact: true }).click();
         await wait(page, 200);
@@ -476,6 +550,58 @@ async function main(): Promise<void> {
     await record(browser, 9, "guest-return", "light", (page) =>
       driveGuestReturn(page, triviaSlug),
     );
+
+    // Phase 12 — guest home, always-on share, and the signed-in your/joined tabs.
+
+    // A second host (Taylor) creates a poll that the owner (Alex) then joins, so
+    // Alex's "Joined" tab has a real row. Requires ALLOWLIST_ENABLED=false so a
+    // non-owner can create during the capture run.
+    const taylorSlug = await plain(browser, (p) =>
+      quickCreateAs(p, "taylor@example.com", "Taylor", "Taylor's game night 🎮", [
+        "20",
+        "21",
+      ]),
+    );
+    await plain(browser, (p) =>
+      voteAsUser(p, OWNER, "Alex", taylorSlug, ["Yes", "If-need-be"]),
+    );
+
+    // Guest "looked at" home: one browser (no dev-login) opens two polls — which
+    // records them in localStorage — then lands on / to find them listed, with
+    // the persistent "sign in to keep your polls" nudge.
+    await record(browser, 12, "guest-home", "light", async (page) => {
+      await page.goto(`${BASE}/p/${bookSlug}`, { waitUntil: "networkidle" });
+      await wait(page, 1000);
+      await page.goto(`${BASE}/p/${triviaSlug}`, { waitUntil: "networkidle" });
+      await wait(page, 1000);
+      await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+      await page.waitForSelector("text=Polls you've seen");
+      await wait(page, 1700);
+      await page.mouse.wheel(0, 160);
+      await wait(page, 1300);
+    });
+
+    // Always-on share button: the app-bar icon copies the poll link and confirms
+    // with a "Link copied" toast — available to guests, on every poll screen.
+    await record(browser, 12, "share-button", "light", async (page) => {
+      await page.goto(`${BASE}/p/${bookSlug}`, { waitUntil: "networkidle" });
+      await wait(page, 1000);
+      await page.getByRole("button", { name: "Copy link to share" }).click();
+      await page.waitForSelector("text=Link copied");
+      await wait(page, 1700);
+    });
+
+    // Signed-in home: the "Your polls" / "Joined" segmented tabs. Alex sees the
+    // polls they created, switches to the poll they joined (Taylor's), and back.
+    await record(browser, 12, "home-tabs", "light", async (page) => {
+      await devLogin(page, "/");
+      await page.waitForSelector("text=Your polls");
+      await wait(page, 1300);
+      await page.getByRole("button", { name: /^Joined/ }).click();
+      await wait(page, 1700);
+      await page.getByRole("button", { name: /^Your polls/ }).click();
+      await wait(page, 1200);
+    });
   } finally {
     await browser.close();
     rmSync(TMP_DIR, { recursive: true, force: true });

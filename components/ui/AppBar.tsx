@@ -11,10 +11,12 @@ export interface AppBarProps {
   title: string;
   /**
    * Home affordance as a link — renders a leading house button (e.g. → the
-   * creator dashboard). Takes precedence over the back affordances when set,
-   * since a screen shows one leading control.
+   * creator dashboard or the guest's looked-at list). Takes precedence over the
+   * back affordances when set, since a screen shows one leading control.
    */
   homeHref?: string;
+  /** Accessible label for the home button (destination differs by viewer). */
+  homeLabel?: string;
   /** Back affordance as a callback — renders a leading icon button. */
   onBack?: () => void;
   /** Back affordance as a link — for server-rendered pages (no client handler). */
@@ -31,6 +33,7 @@ export interface AppBarProps {
 export function AppBar({
   title,
   homeHref,
+  homeLabel = "Your polls",
   onBack,
   backHref,
   hostLine,
@@ -45,7 +48,7 @@ export function AppBar({
           {homeHref ? (
             <Link
               href={homeHref}
-              aria-label="Your polls"
+              aria-label={homeLabel}
               className={backBtnClass}
             >
               <House size={20} />

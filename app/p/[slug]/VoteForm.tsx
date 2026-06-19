@@ -10,6 +10,7 @@ import {
   Button,
   Input,
   Segmented,
+  ShareButton,
   SlotCard,
   ThemeToggle,
   TzChip,
@@ -20,6 +21,7 @@ import {
   GUEST_NAME_STORAGE_KEY,
   mintGuestKey,
 } from "@/lib/guest";
+import { recordVisit } from "@/lib/guest-history";
 import { LIMITS } from "@/lib/limits";
 import { loadGuestBallot, submitVote, signInToVote } from "./actions";
 
@@ -48,8 +50,6 @@ export interface VoteFormProps {
   closed: boolean;
   slots: VoteSlot[];
   isLoggedIn: boolean;
-  /** Viewer is the poll's host — shows a home button back to their dashboard. */
-  isHost: boolean;
   /** Display name for a signed-in voter (their account name). */
   userName: string | null;
   /**
@@ -113,7 +113,6 @@ export function VoteForm({
   closed,
   slots,
   isLoggedIn,
-  isHost,
   userName,
   initialVotes,
   hasSavedBallot,
@@ -148,6 +147,11 @@ export function VoteForm({
   // hydrated saved ballot > empty. Runs once.
   const restoredRef = useRef(false);
   useEffect(() => {
+    // Remember this poll in the browser's "looked at" history so it shows up on
+    // the guest home. Records for everyone; only surfaced on the guest/non-creator
+    // home (harmless for hosts).
+    recordVisit(slug, title);
+
     try {
       const raw = localStorage.getItem(draftKey(slug));
       if (raw) {
@@ -203,7 +207,7 @@ export function VoteForm({
         );
       }
     });
-  }, [slug, isLoggedIn]);
+  }, [slug, title, isLoggedIn]);
 
   // Persist the working draft as it changes (skip the initial render so we don't
   // clobber a draft before restoring it). Cleared on a successful submit.
@@ -342,8 +346,16 @@ export function VoteForm({
     <div className="flex min-h-screen flex-col">
       <AppBar
         title={title}
-        homeHref={isHost ? "/" : undefined}
-        right={<ThemeToggle />}
+        // Everyone has a home now: the host's dashboard, a signed-in voter's
+        // polls, or a guest's looked-at list (this poll is already in it).
+        homeHref="/"
+        homeLabel={isLoggedIn ? "Your polls" : "Polls you've seen"}
+        right={
+          <>
+            <ShareButton slug={slug} />
+            <ThemeToggle />
+          </>
+        }
         hostLine={
           <>
             <span>{hostFirstName} wants to find a time</span>
