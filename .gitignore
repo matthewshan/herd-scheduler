@@ -27,4 +27,6 @@ next-env.d.ts
 
 # visual-capture scratch (webm frames; GIFs are committed under docs/)
 /.capture-tmp
-/.capture-dev.log
+/.capture-*.log
+# local static ffmpeg (Windows N has no system ffmpeg; FFMPEG env points here)
+/.capture-ffmpeg

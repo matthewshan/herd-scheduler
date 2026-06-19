@@ -55,7 +55,12 @@ function webmToGif(webmPath: string, gifPath: string): void {
     "[s0]palettegen=max_colors=128[p]",
     "[s1][p]paletteuse=dither=bayer:bayer_scale=3",
   ].join(",");
-  execFileSync("ffmpeg", ["-y", "-i", webmPath, "-vf", filters, gifPath], {
+  // Resolve ffmpeg from $FFMPEG when set, else the one on PATH. This lets
+  // platforms without a full system ffmpeg (e.g. Windows N editions, where the
+  // only build around is Playwright's stripped one missing palettegen) point at
+  // a local static build without putting it on PATH.
+  const ffmpeg = process.env.FFMPEG ?? "ffmpeg";
+  execFileSync(ffmpeg, ["-y", "-i", webmPath, "-vf", filters, gifPath], {
     stdio: "ignore",
   });
 }
