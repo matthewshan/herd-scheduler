@@ -4,6 +4,7 @@ import { canCreatePolls, isOwnerEmail } from "@/lib/access";
 import { listPollsForCreator, listPollsJoined } from "@/lib/polls";
 import { CreatorHome } from "./CreatorHome";
 import { GuestHome } from "./GuestHome";
+import { SignInScreen } from "./SignInScreen";
 
 // First name only — the voice addresses people by first name (design guide).
 function firstName(name: string | null, email: string): string {
@@ -34,7 +35,9 @@ async function ownerFirstName(): Promise<string> {
 export default async function Home() {
   const user = await getSessionUser();
   if (!user) {
-    return <GuestHome />;
+    // A guest with looked-at polls sees that list; one with none falls back to
+    // the sign-in screen (decided client-side from localStorage by GuestHome).
+    return <GuestHome signInScreen={<SignInScreen />} />;
   }
 
   const isOwner = user.isOwner || isOwnerEmail(user.email);

@@ -50,8 +50,6 @@ export interface VoteFormProps {
   closed: boolean;
   slots: VoteSlot[];
   isLoggedIn: boolean;
-  /** Viewer is the poll's host — shows a home button back to their dashboard. */
-  isHost: boolean;
   /** Display name for a signed-in voter (their account name). */
   userName: string | null;
   /**
@@ -115,7 +113,6 @@ export function VoteForm({
   closed,
   slots,
   isLoggedIn,
-  isHost,
   userName,
   initialVotes,
   hasSavedBallot,
@@ -349,7 +346,10 @@ export function VoteForm({
     <div className="flex min-h-screen flex-col">
       <AppBar
         title={title}
-        homeHref={isHost ? "/" : undefined}
+        // Everyone has a home now: the host's dashboard, a signed-in voter's
+        // polls, or a guest's looked-at list (this poll is already in it).
+        homeHref="/"
+        homeLabel={isLoggedIn ? "Your polls" : "Polls you've seen"}
         right={
           <>
             <ShareButton slug={slug} />
