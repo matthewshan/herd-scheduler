@@ -211,6 +211,83 @@ export interface GuestRecord {
 }
 
 /**
+ * Adopt a guest's existing participation into a now-signed-in account (spec §5,
+ * §6). When someone votes as a guest and then signs in (the inline affordance on
+ * the vote screen), their guest ballot would otherwise be stranded under the
+ * per-browser `guestKey`. This rebinds it to `userId` so the account carries the
+ * votes forward, runs in one transaction, and is idempotent (a no-op once the
+ * guest row has been claimed). Returns the resulting ballot (so the client can
+ * reflect it without a full reload), or `null` when there was nothing to claim.
+ *
+ * Two cases:
+ *  - The account has no participation here yet → relabel the guest row in place
+ *    (preserves its `Availability` rows untouched), dropping `guestKey`/
+ *    `guestName`.
+ *  - The account already voted here → merge the guest's answers into the user's
+ *    row (the just-cast guest answers win per-slot, since signing in right after
+ *    voting implies they're the latest intent), then delete the guest row.
+ */
+export async function claimGuestParticipant(
+  pollId: string,
+  guestKey: string,
+  userId: string,
+): Promise<Ballot | null> {
+  return prisma.$transaction(async (tx) => {
+    const guest = await tx.participant.findUnique({
+      where: { pollId_guestKey: { pollId, guestKey } },
+      include: { availabilities: true },
+    });
+    if (!guest) {
+      return null; // nothing under this key on this poll (already claimed / never voted)
+    }
+
+    const mine = await tx.participant.findUnique({
+      where: { pollId_userId: { pollId, userId } },
+      include: { availabilities: true },
+    });
+
+    if (!mine) {
+      // No account row yet — relabel the guest row, keeping its availabilities.
+      await tx.participant.update({
+        where: { id: guest.id },
+        data: { userId, guestKey: null, guestName: null },
+      });
+    } else {
+      // The account already has a row here: fold the guest's answers in (guest
+      // wins per-slot), then drop the guest row (cascades its availabilities).
+      for (const a of guest.availabilities) {
+        await tx.availability.upsert({
+          where: {
+            participantId_timeOptionId: {
+              participantId: mine.id,
+              timeOptionId: a.timeOptionId,
+            },
+          },
+          create: {
+            participantId: mine.id,
+            timeOptionId: a.timeOptionId,
+            response: a.response,
+          },
+          update: { response: a.response },
+        });
+      }
+      await tx.participant.delete({ where: { id: guest.id } });
+    }
+
+    // Read back the account's ballot so the caller can reflect the merge.
+    const merged = await tx.participant.findUnique({
+      where: { pollId_userId: { pollId, userId } },
+      include: { availabilities: true },
+    });
+    const ballot: Ballot = {};
+    for (const a of merged?.availabilities ?? []) {
+      ballot[a.timeOptionId] = RESPONSE_TO_UI[a.response];
+    }
+    return ballot;
+  });
+}
+
+/**
  * A returning guest's saved state for a poll, in one query: their ballot plus
  * the display name on their row. Backs the client-side hydration of the vote
  * screen (the page is a server component that can't read the browser-held

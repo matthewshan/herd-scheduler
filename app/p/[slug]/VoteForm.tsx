@@ -23,7 +23,12 @@ import {
 } from "@/lib/guest";
 import { recordVisit } from "@/lib/guest-history";
 import { LIMITS } from "@/lib/limits";
-import { loadGuestBallot, submitVote, signInToVote } from "./actions";
+import {
+  claimGuestVotes,
+  loadGuestBallot,
+  submitVote,
+  signInToVote,
+} from "./actions";
 
 // One candidate time, pre-formatted in the poll's zone (server-side, via
 // lib/time) so the client never touches UTC.
@@ -152,12 +157,16 @@ export function VoteForm({
     // home (harmless for hosts).
     recordVisit(slug, title);
 
+    // True when a local draft (the voter's latest unsaved work) was restored —
+    // it must win over anything we load/claim from the server below.
+    let restoredDraft = false;
     try {
       const raw = localStorage.getItem(draftKey(slug));
       if (raw) {
         const draft = JSON.parse(raw) as VoteDraft;
         if (draft.votes && Object.keys(draft.votes).length > 0) {
           setVotes(draft.votes);
+          restoredDraft = true;
         }
         if (!isLoggedIn && draft.name) {
           setGuestName(draft.name);
@@ -169,7 +178,32 @@ export function VoteForm({
     restoredRef.current = true;
 
     if (isLoggedIn) {
-      return; // signed-in voters are pre-filled server-side by userId
+      // Signed-in voters are pre-filled server-side by userId. But if this
+      // browser still holds a guest key that voted on this poll — e.g. they
+      // voted as a guest and just used the inline sign-in — adopt that ballot
+      // into the account so it isn't stranded under the per-browser key.
+      let priorGuestKey: string | null = null;
+      try {
+        priorGuestKey = localStorage.getItem(GUEST_ID_STORAGE_KEY);
+      } catch {
+        return; // storage unavailable — nothing to claim
+      }
+      if (!priorGuestKey) {
+        return;
+      }
+      void claimGuestVotes(slug, priorGuestKey).then((res) => {
+        if (!res.ok || !res.ballot || Object.keys(res.ballot).length === 0) {
+          return; // nothing was claimed
+        }
+        const claimed = res.ballot;
+        setEverSubmitted(true);
+        // The claimed ballot is the account's full, merged server state, so it
+        // supersedes the server-prefilled votes — but never a restored draft.
+        if (!restoredDraft) {
+          setVotes(claimed);
+        }
+      });
+      return;
     }
     let storedKey: string | null = null;
     try {
@@ -352,7 +386,7 @@ export function VoteForm({
         homeLabel={isLoggedIn ? "Your polls" : "Polls you've seen"}
         right={
           <>
-            <ShareButton slug={slug} />
+            <ShareButton slug={slug} title={title} />
             <ThemeToggle />
           </>
         }

@@ -109,7 +109,7 @@ export function ResultsView({
         backHref={isHost ? undefined : `/p/${slug}`}
         right={
           <>
-            <ShareButton slug={slug} />
+            <ShareButton slug={slug} title={title} />
             <ThemeToggle />
           </>
         }
