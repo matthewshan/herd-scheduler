@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useReducer, useState, useTransition } from "react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import {
   Check,
   Clock,
@@ -15,7 +15,10 @@ import {
 } from "lucide-react";
 import { BottomBar, Button, StatusPill, ThemeToggle } from "@/components/ui";
 import { deletePoll } from "@/app/p/[slug]/finalize/actions";
+import { GUEST_ID_STORAGE_KEY } from "@/lib/guest";
+import { loadVisits } from "@/lib/guest-history";
 import type { CreatorPollRow, PublicPollSummary } from "@/lib/polls";
+import { claimGuestVotesForSlugs } from "./actions";
 import { BrandMark, PollSummaryCard } from "./PollSummaryCard";
 
 // Duration of the delete card's collapse+fade. Kept as a constant so the CSS
@@ -302,6 +305,40 @@ export function CreatorHome({
   const [del, dispatch] = useReducer(deleteReducer, initialDeleteState);
   const [, startDelete] = useTransition();
   const [tab, setTab] = useState<HomeTab>("yours");
+
+  // Adopt any stranded guest votes into this account on mount. A guest who
+  // signed in from the home screen (rather than the inline affordance on a vote
+  // page) never hits the vote screen's per-poll claim — so their votes would
+  // stay under the per-browser guest key and never appear under "Joined". This
+  // claims them across the polls this browser has visited (the slugs we know the
+  // guest may have voted on), then refreshes so the newly-joined polls surface.
+  // Idempotent and safe to re-run, so guard it to once per mount.
+  const claimedRef = useRef(false);
+  useEffect(() => {
+    if (claimedRef.current) {
+      return;
+    }
+    claimedRef.current = true;
+    let guestKey: string | null = null;
+    try {
+      guestKey = localStorage.getItem(GUEST_ID_STORAGE_KEY);
+    } catch {
+      return; // storage unavailable — nothing to claim
+    }
+    if (!guestKey) {
+      return;
+    }
+    const slugs = loadVisits().map((v) => v.slug);
+    if (slugs.length === 0) {
+      return;
+    }
+    void claimGuestVotesForSlugs(slugs, guestKey).then((res) => {
+      if (res.ok && res.claimed > 0) {
+        // Re-fetch so the just-claimed polls show up in the Joined tab.
+        router.refresh();
+      }
+    });
+  }, [router]);
 
   function copy(slug: string) {
     const url = `${window.location.origin}/p/${slug}`;
