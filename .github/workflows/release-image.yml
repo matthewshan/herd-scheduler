@@ -76,7 +76,11 @@ jobs:
           tags: ${{ steps.meta-app.outputs.tags }}
           labels: ${{ steps.meta-app.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=min (not max): the `builder` stage is invalidated by `COPY . .`
+          # on every commit, so exporting its (large) layers each run is ~2 min of
+          # wasted upload for a near-zero hit rate. The reusable `deps` layer is
+          # kept cached by the migrate build's mode=max below.
+          cache-to: type=gha,mode=min
 
       - name: Build and push migrate image
         uses: docker/build-push-action@v6
@@ -87,4 +91,7 @@ jobs:
           tags: ${{ steps.meta-migrate.outputs.tags }}
           labels: ${{ steps.meta-migrate.outputs.labels }}
           cache-from: type=gha
+          # mode=max here is cheap — the migrate target only references the `deps`
+          # stage (no `builder`/.next output), so this exports the install layer
+          # both images reuse, keeping `pnpm install` cached across runs.
           cache-to: type=gha,mode=max
