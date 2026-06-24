@@ -34,8 +34,14 @@ export interface SlotInput {
 export interface ParticipantInput {
   userId: string | null;
   guestName: string | null;
-  user?: { name: string | null } | null;
+  user?: { name: string | null; image?: string | null } | null;
   availabilities: { timeOptionId: string; response: Response }[];
+}
+
+/** A voter shown in a slot's avatar stack. `image` is null for guests. */
+export interface Attendee {
+  name: string;
+  image: string | null;
 }
 
 export interface PollResultsInput {
@@ -63,8 +69,8 @@ export interface SlotResult {
   worksForEveryone: boolean;
   /** Yes + maybe — an aggregate count, safe to show even when anonymous. */
   canMakeItCount: number;
-  /** Yes+maybe voter names, in vote order — `null` on anonymous polls (privacy). */
-  attendees: string[] | null;
+  /** Yes+maybe voters, in vote order — `null` on anonymous polls (privacy). */
+  attendees: Attendee[] | null;
 }
 
 export interface PollResults {
@@ -85,6 +91,12 @@ function displayName(p: ParticipantInput): string {
   return p.user?.name?.trim() || p.guestName?.trim() || "Someone";
 }
 
+// A signed-in voter carries their profile photo into the avatar stack; guests
+// have no account image, so they fall back to the initial circle.
+function attendeeOf(p: ParticipantInput): Attendee {
+  return { name: displayName(p), image: p.user?.image ?? null };
+}
+
 /**
  * Aggregate a poll's votes into per-slot results — the pure core. Enforces
  * anonymity (drops attendee names when `anonymousVoting`) and computes best-fit,
@@ -95,7 +107,7 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
   // appears (with zero counts).
   const tally = new Map<
     string,
-    { yes: number; maybe: number; no: number; attendees: string[] }
+    { yes: number; maybe: number; no: number; attendees: Attendee[] }
   >();
   for (const opt of poll.timeOptions) {
     tally.set(opt.id, { yes: 0, maybe: 0, no: 0, attendees: [] });
@@ -107,7 +119,7 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
       continue; // blank submit — not a response
     }
     respondedCount += 1;
-    const name = displayName(p);
+    const attendee = attendeeOf(p);
     for (const a of p.availabilities) {
       const t = tally.get(a.timeOptionId);
       if (!t) {
@@ -115,10 +127,10 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
       }
       if (a.response === "yes") {
         t.yes += 1;
-        t.attendees.push(name);
+        t.attendees.push(attendee);
       } else if (a.response === "ifneedbe") {
         t.maybe += 1;
-        t.attendees.push(name);
+        t.attendees.push(attendee);
       } else {
         t.no += 1;
       }
@@ -186,7 +198,7 @@ export const pollResultsInclude = {
   timeOptions: { orderBy: { sortOrder: "asc" } },
   participants: {
     include: {
-      user: { select: { name: true } },
+      user: { select: { name: true, image: true } },
       availabilities: { select: { timeOptionId: true, response: true } },
     },
   },

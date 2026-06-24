@@ -73,6 +73,7 @@ export default async function VotePage({ params }: VotePageProps) {
       slots={slots}
       isLoggedIn={user !== null}
       userName={user?.name ?? null}
+      userImage={user?.image ?? null}
       initialVotes={initialVotes}
       hasSavedBallot={hasSavedBallot}
     />

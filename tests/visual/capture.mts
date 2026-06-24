@@ -443,12 +443,21 @@ async function devLoginAs(
   email: string,
   name: string,
   to: string,
+  image?: string,
 ): Promise<void> {
+  const img = image ? `&image=${encodeURIComponent(image)}` : "";
   const url = `${BASE}/api/dev/login?email=${encodeURIComponent(
     email,
-  )}&name=${encodeURIComponent(name)}&callbackUrl=${encodeURIComponent(to)}`;
+  )}&name=${encodeURIComponent(name)}${img}&callbackUrl=${encodeURIComponent(
+    to,
+  )}`;
   await page.goto(url, { waitUntil: "networkidle" });
 }
+
+// Deterministic, public stand-in photos for the profile-picture flow (the
+// dev-login bypass has no Google image). Realistic faces so the avatar stack
+// reads as real profile pictures.
+const AVATAR = (n: number) => `https://i.pravatar.cc/150?img=${n}`;
 
 /**
  * Create a poll as a specific dev-login host (data-seeding). Used to seed a poll
@@ -483,8 +492,9 @@ async function voteAsUser(
   name: string,
   slug: string,
   picks: string[],
+  image?: string,
 ): Promise<void> {
-  await devLoginAs(page, email, name, `/p/${slug}`);
+  await devLoginAs(page, email, name, `/p/${slug}`, image);
   await page.waitForSelector("text=Which times work for you?");
   const groups = page.getByRole("radiogroup", { name: "Your availability" });
   const count = await groups.count();
@@ -496,6 +506,45 @@ async function voteAsUser(
   }
   await page.getByRole("button", { name: /Submit availability/ }).click();
   await page.waitForSelector("text=Saved");
+}
+
+/**
+ * Profile pictures (this change): signed-in voters now carry their Google photo.
+ * The identity row on the vote screen shows the signed-in voter's avatar, and
+ * each non-anonymous results slot's avatar stack renders the voters' photos
+ * (guests fall back to the initial circle). Records a photo-carrying user voting
+ * and then opening the results, where the earlier signed-in voters' photos show.
+ */
+async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
+  // Sign in WITH a profile photo and land on the vote screen — the identity row
+  // shows the avatar (not the initial fallback).
+  await devLoginAs(page, "jordan@example.com", "Jordan", `/p/${slug}`, AVATAR(5));
+  await page.waitForSelector("text=Which times work for you?");
+  await wait(page, 1200);
+
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  const picks = ["Yes", "Yes", "If-need-be"];
+  const count = await groups.count();
+  for (let i = 0; i < count; i++) {
+    await groups
+      .nth(i)
+      .getByRole("radio", { name: picks[i % picks.length], exact: true })
+      .click();
+    await wait(page, 380);
+  }
+  await wait(page, 500);
+  await page.getByRole("button", { name: /availability/ }).click();
+  await page.waitForSelector("text=Saved");
+  await wait(page, 1100);
+
+  // Open the results — each slot's avatar stack now renders the voters' photos.
+  await page.goto(`${BASE}/p/${slug}/results`, { waitUntil: "networkidle" });
+  await page.waitForSelector("text=Sorted by best fit");
+  await wait(page, 1300);
+  await page.mouse.wheel(0, 240);
+  await wait(page, 1400);
+  await page.mouse.wheel(0, 240);
+  await wait(page, 1400);
 }
 
 async function main(): Promise<void> {
@@ -653,6 +702,36 @@ async function main(): Promise<void> {
       await page.getByRole("button", { name: /^Your polls/ }).click();
       await wait(page, 1200);
     });
+
+    // Profile pictures (this change): signed-in voters carry their Google photo
+    // into the identity row and the results avatar stacks. Its own poll, seeded
+    // with two photo-carrying voters, so the lists/tallies above are untouched.
+    const dinnerSlug = await plain(browser, (p) =>
+      quickCreate(p, "Friends dinner 🍝", ["14", "15", "16"]),
+    );
+    await plain(browser, (p) =>
+      voteAsUser(
+        p,
+        "priya@example.com",
+        "Priya",
+        dinnerSlug,
+        ["Yes", "If-need-be", "Yes"],
+        AVATAR(9),
+      ),
+    );
+    await plain(browser, (p) =>
+      voteAsUser(
+        p,
+        "marcus@example.com",
+        "Marcus",
+        dinnerSlug,
+        ["Yes", "Yes", "No"],
+        AVATAR(12),
+      ),
+    );
+    await record(browser, 12, "profile-avatars", "light", (page) =>
+      driveProfileAvatars(page, dinnerSlug),
+    );
   } finally {
     await browser.close();
     rmSync(TMP_DIR, { recursive: true, force: true });

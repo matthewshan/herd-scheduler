@@ -19,7 +19,9 @@ import {
 //   2. ENABLE_DEV_LOGIN must equal "true"
 //   3. it lives under /api/dev and is documented as throwaway
 //
-// Usage: GET /api/dev/login?email=you@example.com[&name=You][&callbackUrl=/admin]
+// Usage: GET /api/dev/login?email=you@example.com[&name=You][&image=<url>][&callbackUrl=/admin]
+//   `image` sets the user's profile photo (real Google sign-in carries one; the
+//   bypass has none), so avatar/profile-picture flows can be exercised/captured.
 
 export const runtime = "nodejs";
 
@@ -49,6 +51,9 @@ export async function GET(req: NextRequest) {
   }
   const email = normalizeEmail(emailParam);
   const name = url.searchParams.get("name") ?? email.split("@")[0];
+  // Optional profile photo so avatar flows are testable through the bypass
+  // (real Google sign-in supplies `image`; the bypass otherwise leaves it null).
+  const image = url.searchParams.get("image");
   const callbackUrl = url.searchParams.get("callbackUrl") ?? "/";
 
   // Mirror the real signIn gate so the blocklist is testable through here too.
@@ -59,10 +64,20 @@ export async function GET(req: NextRequest) {
   const owner = isOwnerEmail(email);
   const user = await prisma.user.upsert({
     where: { email },
-    create: { email, name, emailVerified: new Date(), isOwner: owner },
+    create: {
+      email,
+      name,
+      emailVerified: new Date(),
+      isOwner: owner,
+      ...(image ? { image } : {}),
+    },
     // Keep a returning bypass user verified too (the real signIn gate requires
     // it); set isOwner when the email matches OWNER_EMAIL.
-    update: { emailVerified: new Date(), ...(owner ? { isOwner: true } : {}) },
+    update: {
+      emailVerified: new Date(),
+      ...(owner ? { isOwner: true } : {}),
+      ...(image ? { image } : {}),
+    },
   });
   if (owner) {
     await prisma.allowedCreator.upsert({
