@@ -17,6 +17,7 @@ import {
   TzChip,
 } from "@/components/ui";
 import { recordVisit } from "@/lib/guest-history";
+import type { Attendee } from "@/lib/results";
 import { clearFinalization, finalizePoll } from "../finalize/actions";
 
 // One slot's results, pre-formatted in the poll's zone server-side.
@@ -35,8 +36,8 @@ export interface ResultSlotView {
   isFinal: boolean;
   worksForEveryone: boolean;
   canMakeItCount: number;
-  /** yes+maybe voter names — `null` on anonymous polls (never rendered then). */
-  attendees: string[] | null;
+  /** yes+maybe voters — `null` on anonymous polls (never rendered then). */
+  attendees: Attendee[] | null;
 }
 
 export interface ResultsViewProps {
@@ -197,7 +198,7 @@ export function ResultsView({
 
                 <div className="flex min-h-[28px] items-center gap-2.5">
                   {!anonymous && s.attendees && s.attendees.length > 0 && (
-                    <AvatarStack names={s.attendees} size={28} max={5} />
+                    <AvatarStack people={s.attendees} size={28} max={5} />
                   )}
                   {s.worksForEveryone ? (
                     <Pill variant="all" icon={<Check size={13} />}>

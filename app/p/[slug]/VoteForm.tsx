@@ -57,6 +57,8 @@ export interface VoteFormProps {
   isLoggedIn: boolean;
   /** Display name for a signed-in voter (their account name). */
   userName: string | null;
+  /** Profile photo URL for a signed-in voter (e.g. their Google picture). */
+  userImage: string | null;
   /**
    * Pre-filled per-slot answers. A signed-in voter's saved ballot, or — for a
    * host with no ballot yet — every slot defaulted to "yes" (presumed available).
@@ -119,6 +121,7 @@ export function VoteForm({
   slots,
   isLoggedIn,
   userName,
+  userImage,
   initialVotes,
   hasSavedBallot,
 }: VoteFormProps) {
@@ -413,7 +416,7 @@ export function VoteForm({
         <div className="mb-2 flex items-center gap-3">
           {isLoggedIn ? (
             <>
-              <Avatar name={userName ?? "You"} size={38} />
+              <Avatar name={userName ?? "You"} src={userImage} size={38} />
               <span className="min-w-0 flex-1 truncate font-body text-[15px] font-semibold text-fg1">
                 {userName ?? "You"}
               </span>

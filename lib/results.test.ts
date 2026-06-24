@@ -162,10 +162,26 @@ describe("summarizeResults — anonymity (privacy guard)", () => {
     expect(s.s1.canMakeItCount).toBe(2); // aggregate count is still exposed
   });
 
-  it("returns attendee names for a non-anonymous poll", () => {
+  it("returns attendees (name + image) for a non-anonymous poll", () => {
     const res = summarizeResults(
       poll([voter("Alex", { s1: "yes" }), voter("Sam", { s1: "ifneedbe" })]),
     );
-    expect(bySlot(res).s1.attendees).toEqual(["Alex", "Sam"]);
+    expect(bySlot(res).s1.attendees).toEqual([
+      { name: "Alex", image: null },
+      { name: "Sam", image: null },
+    ]);
+  });
+
+  it("carries a signed-in voter's profile image into the attendee", () => {
+    const withPhoto: ParticipantInput = {
+      userId: "u-Alex",
+      guestName: null,
+      user: { name: "Alex", image: "https://lh3.googleusercontent.com/a/x" },
+      availabilities: [{ timeOptionId: "s1", response: "yes" }],
+    };
+    const res = summarizeResults(poll([withPhoto]));
+    expect(bySlot(res).s1.attendees).toEqual([
+      { name: "Alex", image: "https://lh3.googleusercontent.com/a/x" },
+    ]);
   });
 });

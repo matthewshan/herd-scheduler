@@ -191,7 +191,9 @@ function Showcase({ idPrefix }: ShowcaseProps) {
           <div className="mt-[9px] flex items-center justify-between">
             <Tally y={5} m={1} n={0} />
             <AvatarStack
-              names={["Alex", "Priya", "Marcus", "Dana", "Sam"]}
+              people={["Alex", "Priya", "Marcus", "Dana", "Sam"].map(
+                (name) => ({ name }),
+              )}
               size={28}
             />
           </div>
@@ -235,8 +237,8 @@ function Showcase({ idPrefix }: ShowcaseProps) {
           ))}
         </div>
         <div className="flex items-center gap-4">
-          <AvatarStack names={PEOPLE.map((p) => p.name)} />
-          <AvatarStack names={["Alex", "Priya"]} />
+          <AvatarStack people={PEOPLE.map((p) => ({ name: p.name }))} />
+          <AvatarStack people={[{ name: "Alex" }, { name: "Priya" }]} />
         </div>
       </Section>
 
