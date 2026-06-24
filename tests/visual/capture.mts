@@ -509,11 +509,11 @@ async function voteAsUser(
 }
 
 /**
- * Profile pictures (this change): signed-in voters now carry their Google photo.
- * The identity row on the vote screen shows the signed-in voter's avatar, and
- * each non-anonymous results slot's avatar stack renders the voters' photos
- * (guests fall back to the initial circle). Records a photo-carrying user voting
- * and then opening the results, where the earlier signed-in voters' photos show.
+ * Profile pictures + name reveal: signed-in voters carry their Google photo into
+ * the vote-screen identity row and the results avatar stacks (guests fall back to
+ * the initial circle). On the results screen, hovering an avatar reveals whose it
+ * is (a name bubble); tapping pins it for touch. Records a photo-carrying user
+ * voting, then opening the results and revealing names on the stack.
  */
 async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
   // Sign in WITH a profile photo and land on the vote screen — the identity row
@@ -541,10 +541,28 @@ async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
   await page.goto(`${BASE}/p/${slug}/results`, { waitUntil: "networkidle" });
   await page.waitForSelector("text=Sorted by best fit");
   await wait(page, 1300);
-  await page.mouse.wheel(0, 240);
+  await page.mouse.wheel(0, 200);
+  await wait(page, 1100);
+
+  // Reveal whose avatar is whose: hovering shows the name bubble (desktop),
+  // tapping pins it (touch). Demonstrated on the best-fit slot's stack.
+  const priya = page
+    .getByRole("button", { name: "Priya", exact: true })
+    .first();
+  await priya.scrollIntoViewIfNeeded();
+  await wait(page, 400);
+  await priya.hover();
   await wait(page, 1400);
-  await page.mouse.wheel(0, 240);
+  const marcus = page
+    .getByRole("button", { name: "Marcus", exact: true })
+    .first();
+  await marcus.hover();
   await wait(page, 1400);
+  // Tap to pin the name (the touch path), then move away.
+  await marcus.click();
+  await wait(page, 1300);
+  await page.mouse.move(8, 8);
+  await wait(page, 900);
 }
 
 async function main(): Promise<void> {
