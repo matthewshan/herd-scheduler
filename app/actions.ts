@@ -8,7 +8,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { isValidGuestKey } from "@/lib/guest";
-import { claimGuestParticipant } from "@/lib/votes";
+import { claimGuestParticipant, isPollAcceptingVotes } from "@/lib/votes";
 import { listPollSummariesBySlug, type PublicPollSummary } from "@/lib/polls";
 import { SLUG_RE } from "@/lib/slug";
 
@@ -34,10 +34,13 @@ export async function loadVisitedPollSummaries(
  * screen) only fires when the inline sign-in returns a guest to that poll —
  * but a guest who signs in from the home screen lands on "/", never touching
  * the vote page, so their guest votes would stay stranded under the per-browser
- * `guestKey`. The signed-in home calls this on mount with that key and the
- * polls this browser has visited (the only slugs it knows the guest may have
- * voted on); each is claimed into the current account. Idempotent — a no-op for
- * polls already claimed or never voted on. Only ever acts for the current
+ * `guestKey`. Right after that guest → sign-in hop (the client's one-shot
+ * pending-claim marker — never on an arbitrary signed-in visit), the signed-in
+ * home (or the vote screen, for the other visited polls) calls this with that
+ * key and the polls this browser has visited (the only slugs it knows the guest
+ * may have voted on); each still-open poll is claimed into the current account.
+ * Idempotent — a no-op for polls already claimed or never voted on, and closed/
+ * finalized polls are skipped. Only ever acts for the current
  * session user. Returns how many polls had a guest row folded in, so the client
  * can refresh to surface them under "Joined".
  */
@@ -60,10 +63,12 @@ export async function claimGuestVotesForSlugs(
   }
   const polls = await prisma.poll.findMany({
     where: { slug: { in: clean } },
-    select: { id: true },
+    select: { id: true, status: true, finalTimeOptionId: true },
   });
   let claimed = 0;
-  for (const poll of polls) {
+  // Closed/finalized polls are skipped: their results are settled, so a late
+  // claim mustn't reshuffle them (the guest row simply stays a guest vote).
+  for (const poll of polls.filter(isPollAcceptingVotes)) {
     const ballot = await claimGuestParticipant(poll.id, guestKey, user.id);
     if (ballot !== null) {
       claimed += 1;

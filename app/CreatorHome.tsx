@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import { BottomBar, Button, StatusPill, ThemeToggle } from "@/components/ui";
 import { deletePoll } from "@/app/p/[slug]/finalize/actions";
-import { GUEST_ID_STORAGE_KEY } from "@/lib/guest";
+import {
+  GUEST_ID_STORAGE_KEY,
+  clearGuestIdentity,
+  takePendingClaim,
+} from "@/lib/guest";
 import { loadVisits } from "@/lib/guest-history";
 import type { CreatorPollRow, PublicPollSummary } from "@/lib/polls";
 import { claimGuestVotesForSlugs } from "./actions";
@@ -312,13 +316,16 @@ export function CreatorHome({
   const [, startDelete] = useTransition();
   const [tab, setTab] = useState<HomeTab>("yours");
 
-  // Adopt any stranded guest votes into this account on mount. A guest who
-  // signed in from the home screen (rather than the inline affordance on a vote
-  // page) never hits the vote screen's per-poll claim — so their votes would
-  // stay under the per-browser guest key and never appear under "Joined". This
-  // claims them across the polls this browser has visited (the slugs we know the
-  // guest may have voted on), then refreshes so the newly-joined polls surface.
-  // Idempotent and safe to re-run, so guard it to once per mount.
+  // Adopt stranded guest votes into this account — but only right after this
+  // browser did the guest → sign-in hop. A guest who signed in from the home
+  // screen (rather than the inline affordance on a vote page) never hits the
+  // vote screen's per-poll claim, so their votes would stay under the
+  // per-browser guest key and never appear under "Joined". The sign-in button
+  // sets a one-shot pending-claim marker; consuming it here claims across the
+  // polls this browser has visited (the slugs we know the guest may have voted
+  // on), forgets the guest identity so no later account on this device can
+  // absorb it, then refreshes so the newly-joined polls surface. Without a fresh
+  // marker (any ordinary signed-in visit) nothing is claimed.
   const claimedRef = useRef(false);
   useEffect(() => {
     if (claimedRef.current) {
@@ -327,6 +334,9 @@ export function CreatorHome({
     claimedRef.current = true;
     let guestKey: string | null = null;
     try {
+      if (!takePendingClaim(localStorage)) {
+        return;
+      }
       guestKey = localStorage.getItem(GUEST_ID_STORAGE_KEY);
     } catch {
       return; // storage unavailable — nothing to claim
@@ -334,16 +344,33 @@ export function CreatorHome({
     if (!guestKey) {
       return;
     }
+    const forget = () => {
+      try {
+        clearGuestIdentity(localStorage);
+      } catch {
+        // best-effort
+      }
+    };
     const slugs = loadVisits().map((v) => v.slug);
     if (slugs.length === 0) {
+      forget();
       return;
     }
-    void claimGuestVotesForSlugs(slugs, guestKey).then((res) => {
-      if (res.ok && res.claimed > 0) {
-        // Re-fetch so the just-claimed polls show up in the Joined tab.
-        router.refresh();
-      }
-    });
+    claimGuestVotesForSlugs(slugs, guestKey)
+      .then((res) => {
+        if (!res.ok) {
+          return;
+        }
+        forget();
+        if (res.claimed > 0) {
+          // Re-fetch so the just-claimed polls show up in the Joined tab.
+          router.refresh();
+        }
+      })
+      .catch(() => {
+        // Claim failed (network/server) — the guest rows are untouched and the
+        // identity is kept; the home renders fine without them.
+      });
   }, [router]);
 
   function copy(slug: string) {

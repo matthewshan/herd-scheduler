@@ -10,6 +10,7 @@ import { checkRateLimit, clientIpFrom, voteRule } from "@/lib/rate-limit";
 import { isValidGuestKey } from "@/lib/guest";
 import {
   claimGuestParticipant,
+  isPollAcceptingVotes,
   loadGuestRecord,
   saveBallot,
   ParticipantLimitError,
@@ -225,12 +226,14 @@ export type ClaimGuestResult =
 
 /**
  * Adopt a guest's saved ballot into the signed-in account (spec §5). Called by
- * the vote screen on mount once a voter is signed in: if this browser still
- * holds a `guestKey` that voted on this poll (e.g. they voted as a guest and
- * then used the inline sign-in), rebind that participation to their account so
- * the votes aren't stranded. Idempotent — a no-op once claimed. Only ever acts
- * for the *current* session user, so it can't be used to hijack another's
- * ballot; the returned ballot goes only to that user.
+ * the vote screen on mount right after this browser did the guest → sign-in hop
+ * (the client's one-shot pending-claim marker — never on an arbitrary signed-in
+ * visit): if the browser's `guestKey` voted on this poll, rebind that
+ * participation to the account so the votes aren't stranded. Skipped for a
+ * closed or finalized poll (its results are settled — `ballot: null`).
+ * Idempotent — a no-op once claimed. Only ever acts for the *current* session
+ * user, so it can't be used to hijack another's ballot; the returned ballot goes
+ * only to that user.
  */
 export async function claimGuestVotes(
   slug: string,
@@ -245,10 +248,13 @@ export async function claimGuestVotes(
   }
   const poll = await prisma.poll.findUnique({
     where: { slug },
-    select: { id: true },
+    select: { id: true, status: true, finalTimeOptionId: true },
   });
   if (!poll) {
     return { ok: false };
+  }
+  if (!isPollAcceptingVotes(poll)) {
+    return { ok: true, ballot: null }; // voting has ended — leave results as-is
   }
   const ballot = await claimGuestParticipant(poll.id, guestKey, user.id);
   return { ok: true, ballot };
