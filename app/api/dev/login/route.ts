@@ -8,6 +8,7 @@ import {
   logAction,
   normalizeEmail,
 } from "@/lib/access";
+import { safeCallbackUrl } from "@/lib/safe-redirect";
 
 // Dev-only sign-in bypass for local testing without the Google round-trip.
 // Because we use database sessions, "signing in" is just a Session row + the
@@ -54,9 +55,14 @@ export async function GET(req: NextRequest) {
   // Optional profile photo so avatar flows are testable through the bypass
   // (real Google sign-in supplies `image`; the bypass otherwise leaves it null).
   const image = url.searchParams.get("image");
-  const callbackUrl = url.searchParams.get("callbackUrl") ?? "/";
+  // Same-origin paths only — never follow `//evil.com` or absolute URLs.
+  const callbackUrl = safeCallbackUrl(
+    url.searchParams.get("callbackUrl"),
+    url.origin,
+  );
 
-  // Mirror the real signIn gate so the blocklist is testable through here too.
+  // Mirror the real signIn gate so the blocklist is testable through here too
+  // (isEmailBlocked exempts the owner, matching the real gate).
   if (await isEmailBlocked(email)) {
     return NextResponse.json({ error: "email is blocked" }, { status: 403 });
   }
@@ -72,10 +78,11 @@ export async function GET(req: NextRequest) {
       ...(image ? { image } : {}),
     },
     // Keep a returning bypass user verified too (the real signIn gate requires
-    // it); set isOwner when the email matches OWNER_EMAIL.
+    // it); re-sync the informational isOwner mirror to OWNER_EMAIL (true or
+    // false — authorization never reads it, see isOwnerEmail).
     update: {
       emailVerified: new Date(),
-      ...(owner ? { isOwner: true } : {}),
+      isOwner: owner,
       ...(image ? { image } : {}),
     },
   });
@@ -100,7 +107,7 @@ export async function GET(req: NextRequest) {
     metadata: { via: "dev-login" },
   });
 
-  const res = NextResponse.redirect(new URL(callbackUrl, url.origin));
+  const res = NextResponse.redirect(callbackUrl);
   res.cookies.set(SESSION_COOKIE, sessionToken, {
     httpOnly: true,
     sameSite: "lax",

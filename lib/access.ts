@@ -18,7 +18,12 @@ export function isAllowlistEnabled(): boolean {
   return process.env.ALLOWLIST_ENABLED !== "false";
 }
 
-/** The single owner, identified by OWNER_EMAIL — independent of the DB flag. */
+/**
+ * The single owner, identified by OWNER_EMAIL. This is the **only** source of
+ * truth for owner authorization — `User.isOwner` is an informational mirror
+ * (re-synced on sign-in and by the seed), never consulted for access, so
+ * changing OWNER_EMAIL immediately revokes the previous owner's admin rights.
+ */
 export function isOwnerEmail(email: string | null | undefined): boolean {
   const owner = process.env.OWNER_EMAIL;
   if (!owner || !email) {
@@ -27,11 +32,16 @@ export function isOwnerEmail(email: string | null | undefined): boolean {
   return normalizeEmail(email) === normalizeEmail(owner);
 }
 
-/** True when the email is on the reactive blocklist. */
+/**
+ * True when the email is on the reactive blocklist. The owner is exempt — the
+ * owner can never be blocked, even by a BlockedEmail row that pre-dates
+ * OWNER_EMAIL being set — so every caller (sign-in gate, dev-login, creator
+ * check) gets the exemption without repeating it.
+ */
 export async function isEmailBlocked(
   email: string | null | undefined,
 ): Promise<boolean> {
-  if (!email) {
+  if (!email || isOwnerEmail(email)) {
     return false;
   }
   const hit = await prisma.blockedEmail.findUnique({
@@ -93,6 +103,22 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 export const AUDIT_ACTION_VALUES = Object.values(
   AUDIT_ACTIONS,
 ) as AuditAction[];
+
+/**
+ * Normalize the `/admin` `?action=` filter. Next hands repeated params over as a
+ * `string[]` (`?action=a&action=b`), and an arbitrary string must never reach
+ * the Prisma query — so take the first value and accept it only if it's a known
+ * audit action. Anything else means "no filter".
+ */
+export function parseAuditActionFilter(
+  raw: string | string[] | undefined,
+): AuditAction | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") {
+    return null;
+  }
+  return AUDIT_ACTION_VALUES.find((a) => a === value) ?? null;
+}
 
 export interface LogActionInput {
   action: AuditAction;

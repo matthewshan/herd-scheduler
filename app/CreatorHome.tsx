@@ -375,7 +375,9 @@ export function CreatorHome({
   );
 
   // ---- non-creator: signed in, but not an approved host — Joined-only ----
-  if (!mayCreate) {
+  // (A former host who can no longer create but still hosts polls falls
+  // through to the tabbed view below, minus the "New poll" CTA.)
+  if (!mayCreate && created.length === 0) {
     if (joined.length === 0) {
       return (
         <div className="flex min-h-screen flex-col">
@@ -506,12 +508,19 @@ export function CreatorHome({
         )}
         <div className="h-2" />
       </main>
-      <BottomBar>
-        <Button block onClick={() => router.push("/create")}>
-          <Plus size={18} />
-          New poll
-        </Button>
-      </BottomBar>
+      {mayCreate ? (
+        <BottomBar>
+          <Button block onClick={() => router.push("/create")}>
+            <Plus size={18} />
+            New poll
+          </Button>
+        </BottomBar>
+      ) : (
+        <p className="mx-auto w-full max-w-[390px] px-4 pb-6 text-center font-body text-[13px] text-fg2">
+          You can still manage these polls. Want to start a new one? Ask{" "}
+          {ownerName} to add you.
+        </p>
+      )}
     </div>
   );
 }

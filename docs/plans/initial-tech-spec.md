@@ -156,7 +156,8 @@ AUTH_URL=              # public base URL of this deployment (set explicitly)
 AUTH_TRUST_HOST=true   # required off-Vercel / behind a TLS-terminating proxy (e.g. Cloudflare Tunnel)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-OWNER_EMAIL=           # bootstrap admin/allowlist owner; gets isOwner + admin access in any mode
+OWNER_EMAIL=           # the admin/allowlist owner; sole source of truth for admin access in any mode
+                       # (changing it revokes the previous owner's admin access immediately)
 ALLOWLIST_ENABLED=     # "true" (default) gates poll creation by the AllowedCreator list;
                        # "false" lets any verified Google login create polls
 APP_TIMEZONE=America/New_York
@@ -176,7 +177,7 @@ Levels of access:
 1. **Anonymous voter** — opens a poll link, votes as a guest (display name only). No account.
 2. **Logged-in voter** — signs in with Google. Gets a stable identity tied to their votes.
 3. **Creator** — logged in and permitted to create/manage polls (see the allowlist toggle below).
-4. **Owner (you)** — a creator with an admin flag who manages access (allowlist, blocklist, audit log).
+4. **Owner (you)** — a creator with an admin flag who manages access (allowlist, blocklist, audit log). Ownership is derived from `OWNER_EMAIL` alone; `User.isOwner` is an informational mirror (re-synced on sign-in and by the seed — set for the owner, cleared for anyone else) and is never used for authorization.
 
 **Creator access is a configurable mode** via `ALLOWLIST_ENABLED`:
 
@@ -187,7 +188,7 @@ Flow for creating a poll: must be logged in (and `email_verified`, see §7) → 
 
 > **Authentication ≠ authorization.** A successful Google sign-in proves *identity*, not *trustworthiness* — anyone can create a Gmail account in minutes. So the allowlist/blocklist is the authorization gate; it is what keeps the site from being abused when opened up, **not** the act of signing in.
 
-**Blocklist** (`BlockedEmail`) — a reactive deny list, checked at sign-in and in `requireCreator()` in **both** modes. Lets the owner ban an abuser spotted in the audit log without flipping the whole site back to allowlist mode. The owner can never be blocked.
+**Blocklist** (`BlockedEmail`) — a reactive deny list, checked at sign-in and in `requireCreator()` in **both** modes. Lets the owner ban an abuser spotted in the audit log without flipping the whole site back to allowlist mode. Blocking also deletes the person's `Session` rows in the same transaction, so they're signed out everywhere immediately rather than keeping a live session until it expires. The owner can never be blocked — even a `BlockedEmail` row matching `OWNER_EMAIL` is ignored (the `email_verified` gate still applies to the owner).
 
 **Audit log** (`AuditLog`) — every meaningful action (sign-in, poll create/update/close/finalize/delete, vote cast/update, creator add/remove, email block/unblock) is recorded for after-the-fact abuse review. It is a **detective** control, not preventive. Owner-only; never feeds the Results API (see §9).
 
@@ -279,7 +280,7 @@ The prototype's React-via-script-tag structure is throwaway — only the visual 
 3. **Core polls** — data model, create flow with multi-select calendar + shared time-range picker, share-link success state with copy-link, guest voting + inline Google sign-in, vote submit/update with "Saved" toast.
 4. **Access control** — allowlist + admin screen + owner bootstrap from `OWNER_EMAIL`.
 5. **Results + finalize** — scoring (`yes*3 + maybe - no*4`), best-fit highlighting, "Works for everyone" pill, manual finalize with banner + change-pick affordance, anonymity-aware rendering. Finalizing a slot ends voting (a finalized poll is treated as closed). Anonymity is enforced in the data layer (`lib/results.ts`), never from `AuditLog`.
-5.5. **Creator home ("My polls")** — the signed-in host's landing screen at `/` (replaces the scaffold): the polls you created, newest first, each with a status pill (open / closed / **finalized**, where finalized is derived from `finalTimeOptionId`), response count, date span, and the leading/finalized time — plus open-results / copy-link row actions and a `New poll` CTA. Empty state for an approved creator with no polls; a "you're all set to vote" state for a signed-in non-creator. Leans on `lib/results.ts` for the leading slot.
+5.5. **Creator home ("My polls")** — the signed-in host's landing screen at `/` (replaces the scaffold): the polls you created, newest first, each with a status pill (open / closed / **finalized**, where finalized is derived from `finalTimeOptionId`), response count, date span, and the leading/finalized time — plus open-results / copy-link row actions and a `New poll` CTA. Empty state for an approved creator with no polls; a "you're all set to vote" state for a signed-in non-creator. A host who loses creator access (removed from the allowlist, or `ALLOWLIST_ENABLED` turned on) still sees and manages the polls they created — only the `New poll` CTA is hidden. Leans on `lib/results.ts` for the leading slot.
 5.75. **Persistent guest identity** — a guest is remembered on their own device: guests key on an opaque client-minted `guestKey` (`localStorage`, global per browser) instead of their display name, so a return visit pre-fills their name, reloads their ballot (client-side hydration — the vote page can't read `localStorage`), and re-submitting edits their prior vote instead of duplicating; same-name guests no longer collide; a quiet "not you? start fresh" link covers shared devices. No accounts, no cross-device — clearing storage means a new guest.
 6. **Polish + Phase 2** — per-viewer local-tz toggle, poll expiry/auto-close, email notifications.
 
