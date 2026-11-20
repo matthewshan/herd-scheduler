@@ -30,7 +30,10 @@ export interface PublicPollSummary {
   span: string;
   /** Distinct participants with ≥1 availability (blank submits don't count). */
   responded: number;
-  /** Leading/finalized time, or null when there are no responses yet. */
+  /**
+   * Leading/finalized time, or null when there's no lead yet — no responses, or
+   * responses but no slot anyone can make (see lib/results best-fit eligibility).
+   */
   lead: CreatorPollLead | null;
 }
 

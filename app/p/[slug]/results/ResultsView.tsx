@@ -43,7 +43,8 @@ export interface ResultSlotView {
 export interface ResultsViewProps {
   slug: string;
   title: string;
-  hostFirstName: string;
+  /** Host's first name; `null` when they have none (the line is omitted). */
+  hostFirstName: string | null;
   /** Full TzChip label, e.g. "Times shown in Eastern Time · ET". */
   tzLabel: string;
   respondedCount: number;
@@ -120,7 +121,7 @@ export function ResultsView({
               <Users size={13} />
               {respondedCount} responded
             </span>
-            <span>· Hosted by {hostFirstName}</span>
+            {hostFirstName && <span>· Hosted by {hostFirstName}</span>}
             <TzChip label={tzLabel} />
           </>
         }

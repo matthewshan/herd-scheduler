@@ -15,8 +15,9 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * Best-fit score for a slot: `yes*3 + maybe - no*4`. Higher is better; the top
- * score wins (ties highlighted equally). A hard No is weighted heavily so a slot
- * someone can't make rarely beats one that works for all.
+ * score among *eligible* slots wins (ties highlighted equally). A hard No is
+ * weighted heavily so a slot someone can't make rarely beats one that works for
+ * all. Eligibility (≥1 yes or maybe) is applied in `summarizeResults`, not here.
  */
 export function scoreSlot(yes: number, maybe: number, no: number): number {
   return yes * 3 + maybe - no * 4;
@@ -61,7 +62,10 @@ export interface SlotResult {
   maybe: number;
   no: number;
   score: number;
-  /** Top score AND not finalized — gets the cerulean ring + "★ Best fit". */
+  /**
+   * Eligible (≥1 yes/maybe), top score among eligible slots, AND not finalized —
+   * gets the cerulean ring + "★ Best fit".
+   */
   isBestFit: boolean;
   /** This is the host's finalized pick. */
   isFinal: boolean;
@@ -78,11 +82,15 @@ export interface PollResults {
   /** Distinct participants with ≥1 availability row (blank submits don't count). */
   respondedCount: number;
   finalTimeOptionId: string | null;
-  /** Slots best-fit first (score desc, then the poll's own order for ties). */
+  /**
+   * Slots best-fit first: eligible slots (≥1 yes/maybe) before ineligible ones,
+   * then score desc, then the poll's own order for ties.
+   */
   slots: SlotResult[];
   /**
    * The single slot to surface in compact UI (creator-home lead line): the
-   * finalized pick if set, else the best-fit winner, else `null` (no responses).
+   * finalized pick if set, else the best-fit winner, else `null` (no responses,
+   * or responses but no slot anyone can make).
    */
   leadSlot: SlotResult | null;
 }
@@ -137,19 +145,28 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
     }
   }
 
-  const hasResponses = respondedCount > 0;
   const finalId = poll.finalTimeOptionId;
 
   // Score every slot first, then derive the top score for best-fit highlighting.
+  // Only slots at least one person can make (≥1 yes or maybe) are eligible:
+  // otherwise an unmarked slot (score 0) or an all-No slot would outrank a slot
+  // with real availability and a single No (e.g. 1 yes + 1 no = -1).
   const scored = poll.timeOptions.map((opt) => {
     const t = tally.get(opt.id)!;
-    return { opt, t, score: scoreSlot(t.yes, t.maybe, t.no) };
+    return {
+      opt,
+      t,
+      score: scoreSlot(t.yes, t.maybe, t.no),
+      eligible: t.yes + t.maybe > 0,
+    };
   });
-  const topScore = hasResponses
-    ? Math.max(...scored.map((s) => s.score))
-    : null;
+  const eligibleScores = scored.filter((s) => s.eligible).map((s) => s.score);
+  // `null` when no slot is eligible (no responses, or only hard Nos) — then
+  // nothing is best fit and there's no lead.
+  const topScore =
+    eligibleScores.length > 0 ? Math.max(...eligibleScores) : null;
 
-  const slots: SlotResult[] = scored.map(({ opt, t, score }) => {
+  const slots: SlotResult[] = scored.map(({ opt, t, score, eligible }) => {
     const isFinal = finalId !== null && opt.id === finalId;
     return {
       id: opt.id,
@@ -162,7 +179,7 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
       score,
       // Best-fit guidance is suppressed once the host has finalized — the pick
       // is then the answer, not the ranking (mirrors the design).
-      isBestFit: hasResponses && finalId === null && score === topScore,
+      isBestFit: eligible && finalId === null && score === topScore,
       isFinal,
       worksForEveryone: t.no === 0 && t.yes + t.maybe > 0,
       canMakeItCount: t.yes + t.maybe,
@@ -170,15 +187,22 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
     };
   });
 
-  // Best-fit first; ties fall back to the poll's own slot order (chronological).
-  slots.sort((a, b) => b.score - a.score || a.sortOrder - b.sortOrder);
+  // Best-fit first: eligible slots ahead of ones nobody can make (so a blank
+  // slot's 0 never sits above a -1 slot someone can make), then score desc; ties
+  // fall back to the poll's own slot order (chronological).
+  slots.sort(
+    (a, b) =>
+      Number(b.canMakeItCount > 0) - Number(a.canMakeItCount > 0) ||
+      b.score - a.score ||
+      a.sortOrder - b.sortOrder,
+  );
 
-  // Lead = finalized pick if set, else the best-fit winner (now slots[0] when
-  // there are responses), else nothing yet.
+  // Lead = finalized pick if set, else the best-fit winner (slots[0] whenever
+  // any slot is eligible), else nothing yet.
   let leadSlot: SlotResult | null = null;
   if (finalId !== null) {
     leadSlot = slots.find((s) => s.id === finalId) ?? null;
-  } else if (hasResponses) {
+  } else if (topScore !== null) {
     leadSlot = slots[0] ?? null;
   }
 
@@ -193,11 +217,18 @@ export function summarizeResults(poll: PollResultsInput): PollResults {
 
 // Shared include so the results screen and the creator-home list pull the same
 // shape and feed summarizeResults identically. Times are stored UTC.
+//
+// PRIVACY: participants are `select`ed, not `include`d, so a poll loaded through
+// here never carries a guest's `guestKey` (a per-browser credential) — even if a
+// caller later serializes the whole row to a client component. Select only what
+// summarizeResults and its callers need; never add `guestKey` here.
 export const pollResultsInclude = {
-  createdBy: { select: { name: true, email: true } },
+  createdBy: { select: { name: true } },
   timeOptions: { orderBy: { sortOrder: "asc" } },
   participants: {
-    include: {
+    select: {
+      userId: true,
+      guestName: true,
       user: { select: { name: true, image: true } },
       availabilities: { select: { timeOptionId: true, response: true } },
     },

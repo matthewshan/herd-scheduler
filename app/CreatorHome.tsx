@@ -198,7 +198,13 @@ function PollCard({
           ) : (
             <>
               <Share2 size={15} className="flex-shrink-0" />
-              <span>Share the link to get the first reply</span>
+              {/* Responses but no lead = nobody can make any slot yet (only
+                  hard Nos), so there's no best fit to surface. */}
+              <span>
+                {hasResp
+                  ? "No time works for anyone yet"
+                  : "Share the link to get the first reply"}
+              </span>
             </>
           )}
         </div>
