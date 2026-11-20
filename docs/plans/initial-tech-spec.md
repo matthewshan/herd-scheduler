@@ -207,7 +207,7 @@ The Vote screen exposes an **inline "Sign in" link** next to the guest name inpu
 - **Availability** — id, participantId, timeOptionId, response (`yes` | `no` | `ifneedbe`). Rows are only persisted for non-null responses; the absence of a row means "not marked" (so tapping a selected segment to clear deletes the row).
 
 Notes:
-- `slug` is unique; generation = `slugify(title) + "-" + nanoid(8)`. Retry on collision.
+- `slug` is unique; generation = `slugify(title) + "-" + nanoid(8)`. Retry on collision. The kebab base is capped at 60 chars (cut at a word boundary where possible, never a trailing hyphen), so a slug is at most 69 chars; common Latin letters NFKD doesn't decompose are transliterated (`ß`→`ss`, `æ`→`ae`, `ø`→`o`, `œ`→`oe`, …). Slugs minted before the cap may be longer (up to ~209), so slug-shape checks on untrusted input (`SLUG_RE` in `lib/slug.ts`) accept up to 220 chars.
 - **Guest identity** is the `guestKey` — an opaque, client-minted id held in the guest's own browser (`localStorage` `herd-guest-id`, global across polls) and keyed per poll via `@@unique([pollId, guestKey])`. `guestName` is just the display label (two guests may share a name; a rename updates the same row). The key is the guest's only credential: it is sent only with that guest's own submits/loads and is **never** returned to any other viewer (anonymity guard, §9). Legacy pre-key guest rows keep a `null` `guestKey` (un-rebindable).
 - When `anonymousVoting = true`, the Results API returns aggregate counts only — never per-voter rows or avatar stacks.
 - All times stored in **UTC**. Displayed in the poll's timezone (Eastern by default) with a visible timezone chip everywhere times appear. A per-viewer "show in my local time" toggle is a Phase 2 nicety.
