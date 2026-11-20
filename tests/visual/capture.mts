@@ -518,7 +518,13 @@ async function voteAsUser(
 async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
   // Sign in WITH a profile photo and land on the vote screen — the identity row
   // shows the avatar (not the initial fallback).
-  await devLoginAs(page, "jordan@example.com", "Jordan", `/p/${slug}`, AVATAR(5));
+  await devLoginAs(
+    page,
+    "jordan@example.com",
+    "Jordan",
+    `/p/${slug}`,
+    AVATAR(5),
+  );
   await page.waitForSelector("text=Which times work for you?");
   await wait(page, 1200);
 
@@ -663,10 +669,13 @@ async function main(): Promise<void> {
     // Alex's "Joined" tab has a real row. Requires ALLOWLIST_ENABLED=false so a
     // non-owner can create during the capture run.
     const taylorSlug = await plain(browser, (p) =>
-      quickCreateAs(p, "taylor@example.com", "Taylor", "Taylor's game night 🎮", [
-        "20",
-        "21",
-      ]),
+      quickCreateAs(
+        p,
+        "taylor@example.com",
+        "Taylor",
+        "Taylor's game night 🎮",
+        ["20", "21"],
+      ),
     );
     await plain(browser, (p) =>
       voteAsUser(p, OWNER, "Alex", taylorSlug, ["Yes", "If-need-be"]),

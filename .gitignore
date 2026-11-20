@@ -30,3 +30,6 @@ next-env.d.ts
 /.capture-*.log
 # local static ffmpeg (Windows N has no system ffmpeg; FFMPEG env points here)
 /.capture-ffmpeg
+
+# Local Claude Code agent worktrees
+.claude/worktrees/
