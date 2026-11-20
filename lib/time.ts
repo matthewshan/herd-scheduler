@@ -76,22 +76,66 @@ function pad(n: number): string {
 /**
  * Parse a 30-minute display label ("7:00 PM", "12:30 AM") into 24-hour parts.
  * Mirrors the labels produced by `generateTimeOptions` in lib/calendar.ts.
- * Throws on an unparseable label so a bad slot can't silently store garbage.
+ * Strict: the hour must be 1–12 and the minute 00–59, so "13:00 PM" or
+ * "99:99 PM" are rejected rather than wrapped. Throws on an unparseable label
+ * so a bad slot can't silently store garbage.
  */
 export function parseTimeLabel(label: string): {
   hour: number;
   minute: number;
 } {
-  const m = label.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const m =
+    typeof label === "string"
+      ? label.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+      : null;
   if (!m) {
+    throw new Error(`Unrecognized time label: "${String(label)}"`);
+  }
+  const rawHour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (rawHour < 1 || rawHour > 12 || minute > 59) {
     throw new Error(`Unrecognized time label: "${label}"`);
   }
-  let hour = Number(m[1]) % 12;
-  const minute = Number(m[2]);
+  let hour = rawHour % 12;
   if (m[3].toUpperCase() === "PM") {
     hour += 12;
   }
   return { hour, minute };
+}
+
+/** Days in a month (0-indexed month), independent of the host timezone. */
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+/**
+ * True when year / month (0-indexed) / day name a real calendar date: all
+ * integers, a 4-digit year, month 0–11, and a day that exists in that month
+ * (so no Feb 30, no `day: 6.5`, no string parts from a crafted request).
+ */
+export function isValidCalendarDate(
+  year: unknown,
+  month: unknown,
+  day: unknown,
+): boolean {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return false;
+  }
+  const y = year as number;
+  const m = month as number;
+  const d = day as number;
+  return (
+    y >= 1000 &&
+    y <= 9999 &&
+    m >= 0 &&
+    m <= 11 &&
+    d >= 1 &&
+    d <= daysInMonth(y, m)
+  );
 }
 
 /**
@@ -100,6 +144,18 @@ export function parseTimeLabel(label: string): {
  *
  * We build a zone-less ISO string from the parts and let date-fns-tz interpret
  * it as local-to-`tz`, so the server's own timezone never leaks in.
+ *
+ * Throws (never returns an Invalid Date) on a non-existent calendar date or an
+ * unparseable time label.
+ *
+ * DST edges (left as-is, by design): a wall time that doesn't exist (2:30 AM ET
+ * on spring-forward day) silently shifts by the gap — date-fns-tz yields the
+ * instant that reads 1:30 AM EST — and an ambiguous fall-back time (1:30 AM ET,
+ * which happens twice) resolves to one of its two occurrences; which one
+ * depends on the *host's* zone (a date-fns-tz quirk: EDT on a UTC/US host, EST
+ * on e.g. Asia/Tokyo). The create flow can't reach either: its picker and the
+ * server's TIME_OPTS check only allow 9:00 AM–11:30 PM, so we document rather
+ * than special-case them.
  */
 export function zonedWallTimeToUtc(
   year: number,
@@ -108,11 +164,18 @@ export function zonedWallTimeToUtc(
   timeLabel: string,
   tz: Timezone,
 ): Date {
+  if (!isValidCalendarDate(year, month, day)) {
+    throw new Error(`Not a real date: ${year}-${month + 1}-${day}`);
+  }
   const { hour, minute } = parseTimeLabel(timeLabel);
   const naive = `${year}-${pad(month + 1)}-${pad(day)}T${pad(hour)}:${pad(
     minute,
   )}:00`;
-  return fromZonedTime(naive, ianaFor(tz));
+  const utc = fromZonedTime(naive, ianaFor(tz));
+  if (Number.isNaN(utc.getTime())) {
+    throw new Error(`Couldn't convert ${naive} (${tz}) to UTC`);
+  }
+  return utc;
 }
 
 /** A stored UTC slot rendered back in the poll's zone, for display. */
@@ -171,8 +234,10 @@ export function formatLeadLabel(startUtc: Date, tz: Timezone): string {
 
 /**
  * The date span across a poll's slots, in the poll's zone, e.g. "Jun 14",
- * "Jun 20–21", or "Jun 30 – Jul 1". `starts` are stored UTC slot start times.
- * Returns "" for an empty list (a poll always has slots, so this is a guard).
+ * "Jun 20–21", or "Jun 30 – Jul 1". A span that crosses a year carries the
+ * year on both ends, e.g. "Dec 30, 2026 – Jan 2, 2027". `starts` are stored UTC
+ * slot start times. Returns "" for an empty list (a poll always has slots, so
+ * this is a guard).
  */
 export function formatSpan(starts: Date[], tz: Timezone): string {
   if (starts.length === 0) {
@@ -183,11 +248,16 @@ export function formatSpan(starts: Date[], tz: Timezone): string {
   const first = toZonedTime(sorted[0], iana);
   const last = toZonedTime(sorted[sorted.length - 1], iana);
 
+  const firstYear = format(first, "yyyy", { timeZone: iana });
+  const lastYear = format(last, "yyyy", { timeZone: iana });
   const firstMonth = format(first, "MMM", { timeZone: iana });
   const lastMonth = format(last, "MMM", { timeZone: iana });
   const firstDay = format(first, "d", { timeZone: iana });
   const lastDay = format(last, "d", { timeZone: iana });
 
+  if (firstYear !== lastYear) {
+    return `${firstMonth} ${firstDay}, ${firstYear} – ${lastMonth} ${lastDay}, ${lastYear}`;
+  }
   if (firstMonth === lastMonth && firstDay === lastDay) {
     return `${firstMonth} ${firstDay}`;
   }

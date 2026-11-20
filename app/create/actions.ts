@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCreator } from "@/lib/auth";
 import { AUDIT_ACTIONS, logAction } from "@/lib/access";
 import { generateUniqueSlug } from "@/lib/slug";
-import { TIMEZONES, zonedWallTimeToUtc } from "@/lib/time";
+import { TIMEZONES } from "@/lib/time";
 import {
   LIMITS,
   maxPollsPerCreator,
@@ -14,16 +14,16 @@ import {
 } from "@/lib/limits";
 import { checkRateLimit, createPollRule } from "@/lib/rate-limit";
 import { saveBallot, type Ballot } from "@/lib/votes";
+import {
+  isSlugCollision,
+  validateSlots,
+  type CreatePollSlotInput,
+} from "./slots";
 
-// One picked slot from the create form: a calendar day (month 0-indexed, to match
-// JS Date / lib/calendar) plus the shared start/end time labels in the poll's zone.
-export interface CreatePollSlotInput {
-  year: number;
-  month: number;
-  day: number;
-  start: string;
-  end: string;
-}
+export type { CreatePollSlotInput } from "./slots";
+
+/** How many fresh slugs to try if `poll.create` races another poll onto ours. */
+const SLUG_CREATE_ATTEMPTS = 3;
 
 export interface CreatePollInput {
   title: string;
@@ -85,48 +85,21 @@ export async function createPoll(
   if (!VALID_TZ.has(input.timezone)) {
     return { ok: false, error: "Pick a timezone." };
   }
-  if (input.slots.length === 0) {
+  if (!Array.isArray(input.slots) || input.slots.length === 0) {
     return { ok: false, error: "Add at least one time." };
   }
   if (input.slots.length > maxSlotsPerPoll()) {
     return { ok: false, error: `Pick at most ${maxSlotsPerPoll()} times.` };
   }
 
-  // Convert each picked range to UTC up front so a bad time label fails before
-  // we touch the DB. Also reject already-past slots — the calendar disables past
-  // days client-side, so this just backstops a crafted request.
-  const now = new Date();
-  let timeOptions: { startTime: Date; endTime: Date; sortOrder: number }[];
-  try {
-    timeOptions = input.slots.map((slot, i) => {
-      const startTime = zonedWallTimeToUtc(
-        slot.year,
-        slot.month,
-        slot.day,
-        slot.start,
-        input.timezone,
-      );
-      const endTime = zonedWallTimeToUtc(
-        slot.year,
-        slot.month,
-        slot.day,
-        slot.end,
-        input.timezone,
-      );
-      if (endTime <= startTime) {
-        throw new Error("End time must be after the start time.");
-      }
-      if (endTime <= now) {
-        throw new Error("Those times are in the past — pick a future date.");
-      }
-      return { startTime, endTime, sortOrder: i };
-    });
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Couldn't read those times.",
-    };
+  // Validate + convert each picked range to UTC up front (see ./slots) so a
+  // crafted request — unreal dates, unknown labels, past or far-future times,
+  // duplicate slots — gets a friendly error before we touch the DB.
+  const slotCheck = validateSlots(input.slots, input.timezone, new Date());
+  if (!slotCheck.ok) {
+    return slotCheck;
   }
+  const { timeOptions } = slotCheck;
 
   const description = input.description?.trim() || null;
   if (description && !withinLimit(description, LIMITS.description)) {
@@ -143,20 +116,33 @@ export async function createPoll(
     };
   }
 
-  const slug = await generateUniqueSlug(title);
-  const poll = await prisma.poll.create({
-    data: {
-      slug,
-      title,
-      description,
-      location,
-      timezone: input.timezone,
-      anonymousVoting: input.anonymousVoting,
-      createdById: user.id,
-      timeOptions: { create: timeOptions },
-    },
-    include: { timeOptions: { select: { id: true } } },
-  });
+  // generateUniqueSlug is check-then-insert, so another poll can still claim the
+  // same slug in between; on that P2002 we mint a fresh slug and retry.
+  const createWithSlug = (slug: string) =>
+    prisma.poll.create({
+      data: {
+        slug,
+        title,
+        description,
+        location,
+        timezone: input.timezone,
+        anonymousVoting: input.anonymousVoting,
+        createdById: user.id,
+        timeOptions: { create: timeOptions },
+      },
+      include: { timeOptions: { select: { id: true } } },
+    });
+  let poll: Awaited<ReturnType<typeof createWithSlug>> | undefined;
+  for (let attempt = 1; poll === undefined; attempt++) {
+    try {
+      poll = await createWithSlug(await generateUniqueSlug(title));
+    } catch (err) {
+      if (!isSlugCollision(err) || attempt >= SLUG_CREATE_ATTEMPTS) {
+        throw err;
+      }
+    }
+  }
+  const { slug } = poll;
 
   // The host is presumed available for the times they proposed: persist a real
   // "yes" ballot for them at creation (not just a UI prefill), so they count as
