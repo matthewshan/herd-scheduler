@@ -9,7 +9,9 @@ reachable through `DATABASE_URL` — nothing host-specific.
 
 CI ([`.github/workflows/publish-image.yml`](../.github/workflows/publish-image.yml))
 builds the `Dockerfile` and pushes **two targets** to GitHub Container
-Registry on every merge to `main` (and on `v*.*.*` tags):
+Registry on every merge to `main`; versioned images come from
+[`release-image.yml`](../.github/workflows/release-image.yml) when a GitHub
+release is published:
 
 | Image | Dockerfile target | Purpose |
 |---|---|---|
@@ -17,8 +19,11 @@ Registry on every merge to `main` (and on `v*.*.*` tags):
 | `ghcr.io/matthewshan/herd-scheduler:latest-migrate` | `migrate` | One-shot `prisma migrate deploy`. Run it to completion against the same `DATABASE_URL` **before** rolling the app. |
 
 Merges also publish immutable `:sha-<shortsha>` / `:sha-<shortsha>-migrate`
-tags; release tags publish `:X.Y.Z` / `:X.Y.Z-migrate`. Pin the sha or semver
-tags in real deployments; `latest` is for convenience.
+tags; published releases publish `:X.Y.Z` / `:X.Y.Z-migrate`, and move
+`:latest` only when the release is the repo's "Latest" release (never for
+prereleases or older-version backports). A bare `v*.*.*` tag push without a
+release publishes nothing. Pin the sha or semver tags in real deployments;
+`latest` is for convenience.
 
 Build locally with `docker build -t herd-scheduler .` (and
 `--target migrate` for the migration image).
@@ -43,14 +48,13 @@ so running it on every deploy is safe.
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | yes | Any Postgres connection string. |
-| `DIRECT_URL` | pooler setups only | Direct (non-pooled) connection for migrations — Reference B. |
 | `AUTH_SECRET` | yes | `openssl rand -base64 32`. |
 | `AUTH_URL` | yes | Public base URL; must match a Google OAuth redirect URI. |
 | `AUTH_TRUST_HOST` | yes off-Vercel | `true` behind any TLS-terminating proxy (Cloudflare Tunnel). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | yes | Redirect URI: `<AUTH_URL>/api/auth/callback/google`. |
 | `OWNER_EMAIL` | yes | Bootstrap owner/admin; seeded on sign-in or `pnpm db:seed`. |
 | `ALLOWLIST_ENABLED` | no (default `true`) | `false` lets any verified Google login create polls. |
-| `APP_TIMEZONE` | no | Default poll display timezone (IANA). |
+| `APP_TIMEZONE` | no (default `America/New_York`) | IANA timezone for `/admin` audit-log timestamps only; polls carry their own timezone. |
 | `RATE_LIMIT_CREATE_MAX` / `RATE_LIMIT_CREATE_WINDOW_SECONDS` | no | Poll creation per creator; default 20 per 3600s. |
 | `RATE_LIMIT_VOTE_MAX` / `RATE_LIMIT_VOTE_WINDOW_SECONDS` | no | Vote submits per client IP; default 30 per 60s. |
 | `CLIENT_IP_HEADER` | per deployment | Single-value header a trusted edge sets to the client IP (e.g. `cf-connecting-ip`). When set, it's the *only* IP source. See [Client IP](#client-ip-rate-limit--audit-log). |
@@ -156,10 +160,11 @@ Serverless opens many short-lived connections, so:
 
 - `DATABASE_URL` = Supabase **pooled** connection — port `6543`,
   `?pgbouncer=true&connection_limit=1`.
-- `DIRECT_URL` = the **direct** connection (port `5432`) — Prisma uses it for
-  migrations only.
 - Run `prisma migrate deploy` as a CI step (the migrate image, or
-  `pnpm migrate:deploy` with both URLs set).
+  `pnpm migrate:deploy`) with **its** `DATABASE_URL` set to the **direct**
+  connection (port `5432`) — a transaction-mode pooler can't run migrations.
+  There is no separate `DIRECT_URL`: the schema deliberately has a single
+  `url`, so single-URL deployments need nothing extra.
 - Register the production domain's redirect URI in Google Cloud Console and
   set `AUTH_URL` to it — preview URLs rotate, so test auth on a stable domain.
 
@@ -173,7 +178,7 @@ The primary target. All cluster wiring lives in the owner-managed
   in-cluster builds.
 - **Postgres on the private LAN**, outside the cluster (a VM — provisioning
   is automated in `k3s-homelab`'s Ansible playbook). Direct connection, so
-  `DIRECT_URL` stays unset.
+  one `DATABASE_URL` serves both the app and the migrate `Job`.
 - **Migrations**: the `-migrate` image as a **sync-wave-gated ArgoCD `Job`**
   (an earlier wave than the `Deployment`, replaced each sync) — it must
   succeed before the new app pods roll.

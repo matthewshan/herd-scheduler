@@ -4,8 +4,10 @@ out
 build
 .git
 .gitignore
-.env
-.env*.local
+# Never bake secrets into the build context: drop every env file except the
+# committed, secret-free template.
+.env*
+!.env.example
 npm-debug.log*
 Dockerfile
 .dockerignore

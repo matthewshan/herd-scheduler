@@ -8,29 +8,59 @@ export type Theme = "light" | "dark";
 export const THEME_STORAGE_KEY = "herd-theme";
 
 /** Inline no-flash script body — runs in <head> before first paint. Keep this
- *  in sync with initTheme()'s precedence: stored choice, else OS preference. */
-export const NO_FLASH_SCRIPT = `(function(){try{var t=localStorage.getItem('${THEME_STORAGE_KEY}');if(t!=='light'&&t!=='dark'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=t;}catch(e){}})();`;
+ *  in sync with resolveTheme()'s precedence: stored choice, else OS preference.
+ *  Storage and matchMedia are each guarded separately and the attribute is
+ *  assigned *outside* both, so a throwing localStorage (blocked storage,
+ *  sandboxed iframe) still yields a resolved `data-theme` — otherwise the CSS
+ *  @media fallback would paint dark while currentTheme() reported "light". */
+export const NO_FLASH_SCRIPT = `(function(){var t=null;try{t=localStorage.getItem('${THEME_STORAGE_KEY}');}catch(e){}if(t!=='light'&&t!=='dark'){var d=false;try{d=!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);}catch(e){}t=d?'dark':'light';}document.documentElement.dataset.theme=t;})();`;
 
-/** Read the persisted choice, falling back to the OS preference. */
-export function initTheme(): Theme {
-  let stored: string | null = null;
-  try {
-    stored = localStorage.getItem(THEME_STORAGE_KEY);
-  } catch {
-    // localStorage unavailable (private mode, etc.) — fall through to OS pref.
-  }
+/** Pure precedence rule: a valid stored choice wins, else the OS preference. */
+export function resolveTheme(
+  stored: string | null | undefined,
+  prefersDark: boolean,
+): Theme {
   if (stored === "light" || stored === "dark") {
     return stored;
   }
-  const prefersDark =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches;
   return prefersDark ? "dark" : "light";
 }
 
-/** The theme currently applied to <html> (the live attribute). */
+function readStoredTheme(): string | null {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    // localStorage unavailable (private mode, blocked storage) — no choice.
+    return null;
+  }
+}
+
+function osPrefersDark(): boolean {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      !!window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Read the persisted choice, falling back to the OS preference. */
+export function initTheme(): Theme {
+  return resolveTheme(readStoredTheme(), osPrefersDark());
+}
+
+/** The theme currently applied to <html> (the live attribute). If the
+ *  attribute was never set (e.g. the no-flash script didn't run), resolve it
+ *  the same way the CSS @media fallback does, so the toggle flips on the first
+ *  click instead of needing two. */
 export function currentTheme(): Theme {
-  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  const attr = document.documentElement.dataset.theme;
+  if (attr === "light" || attr === "dark") {
+    return attr;
+  }
+  return initTheme();
 }
 
 /** Apply a theme to <html> and persist the choice. */
