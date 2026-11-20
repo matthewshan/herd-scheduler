@@ -10,11 +10,11 @@ import { getSessionUser } from "@/lib/auth";
 import { isValidGuestKey } from "@/lib/guest";
 import { claimGuestParticipant } from "@/lib/votes";
 import { listPollSummariesBySlug, type PublicPollSummary } from "@/lib/polls";
+import { SLUG_RE } from "@/lib/slug";
 
 // Guard rails for the untrusted slug list off the client: a sane upper bound
-// (the history cap is 25) and a basic slug-shape filter.
+// (the history cap is 25) and a basic slug-shape filter (`SLUG_RE`, lib/slug).
 const MAX_SLUGS = 50;
-const SLUG_RE = /^[a-z0-9-]{1,80}$/;
 
 export async function loadVisitedPollSummaries(
   slugs: string[],

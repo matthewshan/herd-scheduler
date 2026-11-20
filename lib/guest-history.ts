@@ -73,6 +73,23 @@ export function recordVisit(slug: string, title: string): void {
   save(next);
 }
 
+/**
+ * Which visited slugs to prune after a live-summary fetch. Only a *successful*
+ * fetch is authoritative: a slug the server didn't return no longer exists
+ * (deleted). When the fetch failed (`returned === null` — network/DB blip),
+ * absence proves nothing, so nothing is pruned and the history survives intact.
+ */
+export function slugsToPrune(
+  requested: readonly string[],
+  returned: readonly string[] | null,
+): string[] {
+  if (returned === null) {
+    return [];
+  }
+  const live = new Set(returned);
+  return requested.filter((slug) => !live.has(slug));
+}
+
 /** Drop a poll from history (e.g. it was deleted, or the user removed it). */
 export function removeVisit(slug: string): void {
   if (typeof window === "undefined") {
