@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Share2 } from "lucide-react";
 
 export interface ShareButtonProps {
@@ -55,6 +55,18 @@ async function copyToClipboard(text: string): Promise<boolean> {
 // — sharing is just a URL, no auth needed.
 export function ShareButton({ slug, title }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
+  // The pending "hide the confirmation" timer. Rapid repeat taps reset it (so
+  // the latest copy gets the full COPIED_MS) instead of an earlier timer
+  // cutting the confirmation short; cleared on unmount too.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current) {
+        clearTimeout(copiedTimer.current);
+      }
+    };
+  }, []);
 
   async function share() {
     const url = `${window.location.origin}/p/${slug}`;
@@ -79,7 +91,13 @@ export function ShareButton({ slug, title }: ShareButtonProps) {
     const ok = await copyToClipboard(url);
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), COPIED_MS);
+      if (copiedTimer.current) {
+        clearTimeout(copiedTimer.current);
+      }
+      copiedTimer.current = setTimeout(() => {
+        copiedTimer.current = null;
+        setCopied(false);
+      }, COPIED_MS);
     }
   }
 

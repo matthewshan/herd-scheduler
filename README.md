@@ -93,7 +93,7 @@ command, a CI step). [`docs/deployment.md`](docs/deployment.md) is the full runb
 three reference deployments in detail:
 
 - **Reference A** — any container runtime + Postgres (the compose shape above).
-- **Reference B** — Vercel + Supabase (serverless; needs `DIRECT_URL` for migrations).
+- **Reference B** — Vercel + Supabase (serverless; pooled URL for the app, direct URL for migrations).
 - **Reference C** — self-hosted k3s + LAN Postgres behind a Cloudflare Tunnel (the home target).
 
 ### Build the image yourself
@@ -115,7 +115,6 @@ container, pass them as environment.
 | Variable | Required | What it is |
 |----------|----------|------------|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string. Local dev (the compose Postgres) uses `postgres://app:app@localhost:5432/scheduler`. |
-| `DIRECT_URL` | pooler-only | Direct (non-pooled) URL for migrations when `DATABASE_URL` points at a pooler (e.g. Supabase). Leave empty for a direct connection. |
 | `AUTH_SECRET` | ✅ | Session signing secret. Generate with `openssl rand -base64 32`. |
 | `AUTH_URL` | ✅ | Public base URL of the deployment. Must match a Google redirect URI. Local: `http://localhost:3000`. |
 | `AUTH_TRUST_HOST` | self-hosted | Set `true` on any non-Vercel deployment so Auth.js validates OAuth callbacks against `AUTH_URL`'s origin. Without it, Google sign-in fails with a missing `iss` error. |
@@ -123,7 +122,7 @@ container, pass them as environment.
 | `GOOGLE_CLIENT_SECRET` | ✅ | From the Google OAuth client. |
 | `OWNER_EMAIL` | ✅ | Bootstrap owner/admin (seeded on first sign-in or `pnpm db:seed`); always allowed to create polls and reach `/admin`. |
 | `ALLOWLIST_ENABLED` | no (default `true`) | `true` = poll creation requires an allowlist row; `false` = any *verified* Google login can create. The owner always passes; the blocklist + email-verified gate always apply. |
-| `APP_TIMEZONE` | no | Default poll display timezone, IANA name (e.g. `America/New_York`). |
+| `APP_TIMEZONE` | no (default `America/New_York`) | IANA timezone for the owner-only `/admin` audit-log timestamps. Polls carry their own timezone; this doesn't affect them. |
 | `RATE_LIMIT_CREATE_MAX` / `RATE_LIMIT_CREATE_WINDOW_SECONDS` | no | Poll creation per creator; default 20 per 3600s. |
 | `RATE_LIMIT_VOTE_MAX` / `RATE_LIMIT_VOTE_WINDOW_SECONDS` | no | Vote submits per client IP; default 30 per 60s. |
 | `CLIENT_IP_HEADER` | per deployment | Single-value header your trusted edge sets to the client IP; the only IP source when set. Cloudflare Tunnel: `cf-connecting-ip`. |
@@ -182,26 +181,31 @@ vote without an account (guest voting).
 
 Any PostgreSQL works — the app only needs a `DATABASE_URL`, with no provider-specific features.
 
-**Self-hosted / local Postgres (most setups).** Point `DATABASE_URL` at a direct connection and
-leave `DIRECT_URL` empty. The production compose above runs Postgres for you; otherwise use your
+**Self-hosted / local Postgres (most setups).** Point `DATABASE_URL` at a direct connection —
+that one URL serves both the app and migrations. The production compose above runs Postgres for you; otherwise use your
 own server. Apply migrations with the migrate image (`...:latest-migrate`) or, from source,
 `pnpm migrate:deploy`.
 
-**Managed Postgres behind a pooler (e.g. Supabase).** A pooler can't run migrations, so split the
-URLs — pooled for the app, direct for migrations:
+**Managed Postgres behind a pooler (e.g. Supabase).** A transaction-mode pooler can't run
+migrations, so give `DATABASE_URL` two values — pooled for the app, direct for the one-shot
+migrate step (there's no separate `DIRECT_URL`):
 
 1. **Create a project** at [supabase.com](https://supabase.com/dashboard) and set a database
    password. Wait for it to finish provisioning.
 2. **Grab both connection strings** from Project Settings → **Database** → *Connection string*:
-   - **Pooled** (Supavisor, transaction mode, port **6543**) → `DATABASE_URL`. Add
+   - **Pooled** (Supavisor, transaction mode, port **6543**) → the app's `DATABASE_URL`. Add
      `?pgbouncer=true` so Prisma disables prepared statements.
-   - **Direct** (port **5432**) → `DIRECT_URL`, used for migrations only.
-3. **Set them** (replace `[PASSWORD]`, `[REF]`, `[REGION]`):
+   - **Direct** (port **5432**) → the migrate step's `DATABASE_URL` only.
+3. **Set the app's URL** (replace `[PASSWORD]`, `[REF]`, `[REGION]`):
    ```dotenv
    DATABASE_URL=postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true
-   DIRECT_URL=postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
    ```
-4. **Apply migrations:** `pnpm migrate:deploy` (or the migrate image) with both URLs set.
+4. **Apply migrations** with `DATABASE_URL` overridden to the direct connection (or run the
+   migrate image with that value) — never through the 6543 pooler:
+   ```bash
+   DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres" \
+     pnpm migrate:deploy
+   ```
 
 > **Portability note:** Supabase is one supported reference, not the target. The app must run
 > against any Postgres via `DATABASE_URL` — don't introduce Supabase-only code paths.

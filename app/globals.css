@@ -11,6 +11,10 @@
 
 :root,
 [data-theme="light"] {
+  /* Native UI (select popups, scrollbars, date pickers, autofill) follows the
+     theme — each theme block below sets its own color-scheme. */
+  color-scheme: light;
+
   /* ---- Brand & neutrals ---------------------------------- */
   --bg: #f7f8fa; /* cool off-white app canvas      */
   --surface: #ffffff; /* cards, sheets                  */
@@ -114,6 +118,8 @@
    force-themed — used by the component gallery to show light + dark together.
    ============================================================ */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --bg: #0e1116;
   --surface: #171b22;
   --surface-2: #20262f;
@@ -152,6 +158,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+
     --bg: #0e1116;
     --surface: #171b22;
     --surface-2: #20262f;

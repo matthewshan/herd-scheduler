@@ -10,10 +10,12 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  // DIRECT_URL (env, optional) is only needed when DATABASE_URL points at a
-  // connection pooler — the Vercel + Supabase reference setup (spec §4). It is
-  // wired into `directUrl` in the deploy phase so the default container path
-  // (a single direct DATABASE_URL) works without requiring the var to be set.
+  // Deliberately a single URL — no `directUrl`. Prisma errors when a
+  // `directUrl = env(...)` var is unset, which would break the portable
+  // single-DATABASE_URL contract. Behind a connection pooler (the Vercel +
+  // Supabase reference, spec §4 B) the app uses the pooled URL, and the
+  // one-shot migrate step runs with DATABASE_URL set to the *direct*
+  // (non-pooled, port 5432) connection instead.
 }
 
 // ---------------------------------------------------------------------------
