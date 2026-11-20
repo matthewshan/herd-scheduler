@@ -1,6 +1,6 @@
 import { Cat } from "lucide-react";
 import { signIn } from "@/auth";
-import { Button } from "@/components/ui";
+import { ClaimingSignInButton } from "./ClaimingSignInButton";
 
 // Google's "G" — lucide has no brand logo, so inline the multi-color mark.
 function GoogleG({ size = 20 }: { size?: number }) {
@@ -51,10 +51,10 @@ export function SignInScreen() {
 
       <div className="mt-4 w-full">
         <form action={signInWithGoogle}>
-          <Button type="submit" variant="ghost" block>
+          <ClaimingSignInButton type="submit" variant="ghost" block>
             <GoogleG size={20} />
             Continue with Google
-          </Button>
+          </ClaimingSignInButton>
         </form>
         <p className="mt-5 font-body text-[13px] text-fg3">
           Got a poll link? Just open it — no account needed to vote.

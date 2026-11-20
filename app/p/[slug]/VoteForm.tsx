@@ -19,10 +19,20 @@ import {
 import {
   GUEST_ID_STORAGE_KEY,
   GUEST_NAME_STORAGE_KEY,
+  clearGuestIdentity,
+  markPendingClaim,
   mintGuestKey,
+  takePendingClaim,
 } from "@/lib/guest";
-import { recordVisit } from "@/lib/guest-history";
+import { loadVisits, recordVisit } from "@/lib/guest-history";
 import { LIMITS } from "@/lib/limits";
+import {
+  clearVoteDrafts,
+  parseVoteDraft,
+  voteDraftKey,
+  type VoteDraft,
+} from "@/lib/vote-draft";
+import { claimGuestVotesForSlugs } from "@/app/actions";
 import {
   claimGuestVotes,
   loadGuestBallot,
@@ -100,13 +110,6 @@ function GoogleG({ size = 16 }: GoogleGProps) {
   );
 }
 
-const draftKey = (slug: string) => `herd-vote:${slug}`;
-
-interface VoteDraft {
-  votes: Record<string, VoteValue>;
-  name?: string;
-}
-
 // The core screen: anyone with the link marks availability per slot and submits.
 // Votes live in local state; a local draft preserves in-progress votes across
 // the inline sign-in round-trip (and an accidental refresh).
@@ -153,7 +156,17 @@ export function VoteForm({
   // per-browser identity (Phase 9): pre-fill their last-used name and hydrate
   // their saved ballot for this poll. Precedence: draft (latest unsaved work) >
   // hydrated saved ballot > empty. Runs once.
-  const restoredRef = useRef(false);
+  //
+  // `dirtyRef` flips only on a real user edit (a tap or a name keystroke); the
+  // draft is persisted only while dirty, so server-loaded/hydrated/claimed votes
+  // are never copied into a "draft" that would later shadow a newer ballot
+  // saved from another device.
+  const dirtyRef = useRef(false);
+  // Bumped by "Start fresh" so an in-flight guest hydration that resolves
+  // afterwards can't resurrect the identity the guest just discarded.
+  const identityGenRef = useRef(0);
+  // Stable string key for the slot ids (the prop array may be re-created).
+  const slotIdsKey = slots.map((s) => s.id).join("|");
   useEffect(() => {
     // Remember this poll in the browser's "looked at" history so it shows up on
     // the guest home. Records for everyone; only surfaced on the guest/non-creator
@@ -161,13 +174,16 @@ export function VoteForm({
     recordVisit(slug, title);
 
     // True when a local draft (the voter's latest unsaved work) was restored —
-    // it must win over anything we load/claim from the server below.
+    // it must win over anything we load/claim from the server below. Drafted
+    // answers for slots that no longer exist are dropped.
     let restoredDraft = false;
     try {
-      const raw = localStorage.getItem(draftKey(slug));
-      if (raw) {
-        const draft = JSON.parse(raw) as VoteDraft;
-        if (draft.votes && Object.keys(draft.votes).length > 0) {
+      const draft = parseVoteDraft(
+        localStorage.getItem(voteDraftKey(slug)),
+        new Set(slotIdsKey.split("|")),
+      );
+      if (draft) {
+        if (Object.keys(draft.votes).length > 0) {
           setVotes(draft.votes);
           restoredDraft = true;
         }
@@ -176,17 +192,21 @@ export function VoteForm({
         }
       }
     } catch {
-      // Corrupt/blocked storage — fall back to the server-provided votes.
+      // Blocked storage — fall back to the server-provided votes.
     }
-    restoredRef.current = true;
 
     if (isLoggedIn) {
-      // Signed-in voters are pre-filled server-side by userId. But if this
-      // browser still holds a guest key that voted on this poll — e.g. they
-      // voted as a guest and just used the inline sign-in — adopt that ballot
-      // into the account so it isn't stranded under the per-browser key.
+      // Signed-in voters are pre-filled server-side by userId. If this browser
+      // *just* did the guest → sign-in hop (the one-shot marker set when a
+      // recognized guest hit "Sign in"), adopt the guest identity's ballots into
+      // the account — this poll's, plus any other visited polls' — then forget
+      // the guest identity so a later sign-in on this device (someone else, or
+      // the same person days on) can never absorb it. No marker → no claim.
       let priorGuestKey: string | null = null;
       try {
+        if (!takePendingClaim(localStorage)) {
+          return;
+        }
         priorGuestKey = localStorage.getItem(GUEST_ID_STORAGE_KEY);
       } catch {
         return; // storage unavailable — nothing to claim
@@ -194,7 +214,10 @@ export function VoteForm({
       if (!priorGuestKey) {
         return;
       }
-      void claimGuestVotes(slug, priorGuestKey).then((res) => {
+      const otherSlugs = loadVisits()
+        .map((v) => v.slug)
+        .filter((s) => s !== slug);
+      const claimHere = claimGuestVotes(slug, priorGuestKey).then((res) => {
         if (!res.ok || !res.ballot || Object.keys(res.ballot).length === 0) {
           return; // nothing was claimed
         }
@@ -206,6 +229,22 @@ export function VoteForm({
           setVotes(claimed);
         }
       });
+      const claimElsewhere =
+        otherSlugs.length > 0
+          ? claimGuestVotesForSlugs(otherSlugs, priorGuestKey)
+          : Promise.resolve();
+      Promise.all([claimHere, claimElsewhere])
+        .then(() => {
+          try {
+            clearGuestIdentity(localStorage);
+          } catch {
+            // best-effort
+          }
+        })
+        .catch(() => {
+          // Claim failed (network/server) — the guest rows stay as they were and
+          // the identity is kept; nothing to surface on the vote screen.
+        });
       return;
     }
     let storedKey: string | null = null;
@@ -226,40 +265,49 @@ export function VoteForm({
     setGuestKey(storedKey);
     // The page is a server component that can't see this browser-held key, so
     // the returning guest's saved ballot is hydrated here instead.
-    void loadGuestBallot(slug, storedKey).then((record) => {
-      if (!record) {
-        return; // no participant for this key on this poll
-      }
-      setRecognized(true);
-      if (record.guestName) {
-        const name = record.guestName;
-        setGuestName((prev) => prev || name);
-      }
-      if (Object.keys(record.ballot).length > 0) {
-        // They have a saved ballot — submitting again is an update.
-        setEverSubmitted(true);
-        // Don't clobber a restored draft or anything already tapped.
-        setVotes((prev) =>
-          Object.keys(prev).length > 0 ? prev : record.ballot,
-        );
-      }
-    });
-  }, [slug, title, isLoggedIn]);
+    const gen = identityGenRef.current;
+    loadGuestBallot(slug, storedKey)
+      .then((record) => {
+        if (!record || gen !== identityGenRef.current) {
+          // No participant for this key here — or the guest hit "Start fresh"
+          // while this was in flight, so the result belongs to a discarded identity.
+          return;
+        }
+        setRecognized(true);
+        if (record.guestName) {
+          const name = record.guestName;
+          setGuestName((prev) => prev || name);
+        }
+        if (Object.keys(record.ballot).length > 0) {
+          // They have a saved ballot — submitting again is an update.
+          setEverSubmitted(true);
+          // Don't clobber a restored draft or anything already tapped.
+          setVotes((prev) =>
+            Object.keys(prev).length > 0 ? prev : record.ballot,
+          );
+        }
+      })
+      .catch(() => {
+        // Hydration is best-effort — they can still vote; the submit keys on
+        // the same guestKey, so it updates their existing row either way.
+      });
+  }, [slug, title, isLoggedIn, slotIdsKey]);
 
-  // Persist the working draft as it changes (skip the initial render so we don't
-  // clobber a draft before restoring it). Cleared on a successful submit.
+  // Persist the working draft as it changes — but only once the voter has
+  // actually edited something (see `dirtyRef`), so server-loaded votes never
+  // masquerade as unsaved work. Cleared on a successful submit.
   useEffect(() => {
-    if (!restoredRef.current || submitted) {
+    if (!dirtyRef.current || submitted) {
       return;
     }
     try {
       const hasVotes = Object.keys(votes).length > 0;
       const name = isLoggedIn ? undefined : guestName.trim() || undefined;
       if (!hasVotes && !name) {
-        localStorage.removeItem(draftKey(slug));
+        localStorage.removeItem(voteDraftKey(slug));
       } else {
         const draft: VoteDraft = { votes, name };
-        localStorage.setItem(draftKey(slug), JSON.stringify(draft));
+        localStorage.setItem(voteDraftKey(slug), JSON.stringify(draft));
       }
     } catch {
       // Storage unavailable — drafts just won't persist; voting still works.
@@ -281,6 +329,7 @@ export function VoteForm({
       }
       return next;
     });
+    dirtyRef.current = true;
     // Editing after a save returns the submit bar so the change can be saved.
     if (submitted) {
       setSubmitted(false);
@@ -329,8 +378,10 @@ export function VoteForm({
             // best-effort — without storage they're a new guest next visit
           }
         }
+        // Saved — nothing unsaved remains until the next edit.
+        dirtyRef.current = false;
         try {
-          localStorage.removeItem(draftKey(slug));
+          localStorage.removeItem(voteDraftKey(slug));
         } catch {
           // best-effort
         }
@@ -342,12 +393,15 @@ export function VoteForm({
 
   // Shared devices exist: let a recognized guest discard this browser's stored
   // identity and vote as a brand-new person. The prior participant row (and
-  // their votes) stays — only the local key/name/draft are cleared.
+  // their votes) stays — only the local key/name/drafts are cleared, including
+  // drafts for *other* polls (they carry the previous guest's name and answers).
   function startFresh() {
+    // Invalidate any in-flight hydration for the identity being discarded.
+    identityGenRef.current += 1;
+    dirtyRef.current = false;
     try {
-      localStorage.removeItem(GUEST_ID_STORAGE_KEY);
-      localStorage.removeItem(GUEST_NAME_STORAGE_KEY);
-      localStorage.removeItem(draftKey(slug));
+      clearGuestIdentity(localStorage);
+      clearVoteDrafts(localStorage);
     } catch {
       // best-effort
     }
@@ -361,15 +415,21 @@ export function VoteForm({
     setError(null);
   }
 
-  // Save the in-progress draft before handing off to Google, so the votes are
-  // there to restore when OAuth bounces back to this poll.
+  // Before handing off to Google: save any unsaved edits as a draft so they're
+  // restored when OAuth bounces back to this poll (untouched server-loaded votes
+  // aren't a draft — see `dirtyRef`), and, if this browser holds a guest
+  // identity, set the one-shot pending-claim marker so the signed-in return
+  // adopts that guest's ballots into the account. Only this explicit hop claims.
   function persistForSignIn() {
     try {
-      const draft: VoteDraft = {
-        votes,
-        name: guestName.trim() || undefined,
-      };
-      localStorage.setItem(draftKey(slug), JSON.stringify(draft));
+      if (dirtyRef.current) {
+        const draft: VoteDraft = {
+          votes,
+          name: guestName.trim() || undefined,
+        };
+        localStorage.setItem(voteDraftKey(slug), JSON.stringify(draft));
+      }
+      markPendingClaim(localStorage);
     } catch {
       // best-effort
     }
@@ -428,6 +488,7 @@ export function VoteForm({
                 ref={nameInputRef}
                 value={guestName}
                 onChange={(e) => {
+                  dirtyRef.current = true;
                   setGuestName(e.target.value);
                   if (showNameErr) {
                     setTouchedSubmit(false);

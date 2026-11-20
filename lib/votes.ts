@@ -265,14 +265,43 @@ export interface GuestRecord {
   guestName: string | null;
 }
 
+/** The poll fields that decide whether ballots may still change. */
+export interface PollVotingState {
+  status: string;
+  finalTimeOptionId: string | null;
+}
+
+/**
+ * Whether a poll still accepts ballot changes: `open` and not finalized.
+ * `finalized` is derived (`finalTimeOptionId` set), not a `PollStatus` value —
+ * a finalized poll counts as closed even if its status is still `open`.
+ */
+export function isPollAcceptingVotes(poll: PollVotingState): boolean {
+  return poll.status === "open" && poll.finalTimeOptionId === null;
+}
+
+// Prisma's unique-constraint violation (duck-typed so callers/tests needn't
+// construct a PrismaClientKnownRequestError).
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "P2002"
+  );
+}
+
 /**
  * Adopt a guest's existing participation into a now-signed-in account (spec §5,
  * §6). When someone votes as a guest and then signs in (the inline affordance on
- * the vote screen), their guest ballot would otherwise be stranded under the
- * per-browser `guestKey`. This rebinds it to `userId` so the account carries the
- * votes forward, runs in one transaction, and is idempotent (a no-op once the
- * guest row has been claimed). Returns the resulting ballot (so the client can
- * reflect it without a full reload), or `null` when there was nothing to claim.
+ * the vote screen, or the home sign-in), their guest ballot would otherwise be
+ * stranded under the per-browser `guestKey`. This rebinds it to `userId` so the
+ * account carries the votes forward. Returns the account's resulting ballot (so
+ * the client can reflect it without a full reload), or `null` when there was
+ * nothing to claim — including when the poll is closed, finalized, or gone:
+ * that's re-checked under the poll row lock (`lockPollForVoting`, shared with
+ * saveBallot), so a concurrent finalize can't slip a claim into settled
+ * results. Callers additionally gate this on a fresh guest → sign-in hop (the
+ * client's one-shot pending-claim marker).
  *
  * Two cases:
  *  - The account has no participation here yet → relabel the guest row in place
@@ -281,13 +310,42 @@ export interface GuestRecord {
  *  - The account already voted here → merge the guest's answers into the user's
  *    row (the just-cast guest answers win per-slot, since signing in right after
  *    voting implies they're the latest intent), then delete the guest row.
+ *
+ * Idempotent and race-tolerant: a guest row that vanishes or is relabelled
+ * mid-claim (a concurrent claim won) is a no-op that still returns the account's
+ * current ballot, and a relabel that collides with the account's own row being
+ * created concurrently (P2002) is retried once — the retry takes the merge path.
  */
 export async function claimGuestParticipant(
   pollId: string,
   guestKey: string,
   userId: string,
 ): Promise<Ballot | null> {
+  try {
+    return await claimOnce(pollId, guestKey, userId);
+  } catch (err) {
+    if (!isUniqueViolation(err)) {
+      throw err;
+    }
+    // The failed statement aborted that transaction, so retry from scratch: the
+    // account's row now exists, so the retry merges instead of relabelling.
+    return claimOnce(pollId, guestKey, userId);
+  }
+}
+
+function claimOnce(
+  pollId: string,
+  guestKey: string,
+  userId: string,
+): Promise<Ballot | null> {
   return prisma.$transaction(async (tx) => {
+    // Serialize with ballot writes/finalize on this poll and re-check it's still
+    // taking votes: a closed/finalized poll's results are settled — leave them.
+    const poll = await lockPollForVoting(tx, pollId);
+    if (!poll || !isPollAcceptingVotes(poll)) {
+      return null;
+    }
+
     const guest = await tx.participant.findUnique({
       where: { pollId_guestKey: { pollId, guestKey } },
       include: { availabilities: true },
@@ -303,13 +361,17 @@ export async function claimGuestParticipant(
 
     if (!mine) {
       // No account row yet — relabel the guest row, keeping its availabilities.
-      await tx.participant.update({
-        where: { id: guest.id },
+      // `updateMany` guarded on the key: if a concurrent claim already moved or
+      // deleted the row this matches nothing instead of throwing P2025.
+      await tx.participant.updateMany({
+        where: { id: guest.id, guestKey },
         data: { userId, guestKey: null, guestName: null },
       });
-    } else {
+    } else if (mine.id !== guest.id) {
       // The account already has a row here: fold the guest's answers in (guest
       // wins per-slot), then drop the guest row (cascades its availabilities).
+      // (`mine.id === guest.id` means a concurrent claim relabelled the row
+      // between our two reads — already done, nothing to merge.)
       for (const a of guest.availabilities) {
         await tx.availability.upsert({
           where: {
@@ -326,7 +388,9 @@ export async function claimGuestParticipant(
           update: { response: a.response },
         });
       }
-      await tx.participant.delete({ where: { id: guest.id } });
+      // `deleteMany` guarded on the key: a concurrent claim that already deleted
+      // the guest row makes this a no-op rather than a P2025 throw.
+      await tx.participant.deleteMany({ where: { id: guest.id, guestKey } });
     }
 
     // Read back the account's ballot so the caller can reflect the merge.
