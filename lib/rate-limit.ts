@@ -9,6 +9,8 @@
 // These are preventive controls layered on top of the Phase 4 detective ones
 // (audit log + blocklist) and the per-field size caps in `lib/limits.ts`.
 
+import { resolveClientIp } from "@/lib/client-ip";
+
 interface Window {
   /** Start of the current fixed window (ms epoch). */
   startedAt: number;
@@ -24,7 +26,21 @@ export interface RateLimitRule {
   windowMs: number;
 }
 
+// Insertion order doubles as window-start order: a key is (re)inserted at the
+// back whenever its window starts, so the front of the map is always the
+// oldest window — the cheapest eviction candidate when the cap is hit.
 const windows = new Map<string, Window>();
+
+/**
+ * Hard ceiling on tracked keys. The periodic sweep alone doesn't bound memory:
+ * a flood of distinct keys inside one sweep interval would each add an entry.
+ * At the cap, inserting a new key evicts the oldest window first (O(1)). Each
+ * entry is ~100–200 bytes, so this caps the store at a few MB. Eviction can
+ * forgive an old, still-active window early — the price of bounded memory; a
+ * single client can't exploit it because its key no longer rotates (see
+ * lib/client-ip.ts).
+ */
+export const MAX_TRACKED_KEYS = 10_000;
 
 // Opportunistic cleanup so abandoned keys (one-off IPs) don't accumulate
 // forever in a long-lived process. Runs at most once per sweep interval,
@@ -55,11 +71,25 @@ export function checkRateLimit(key: string, rule: RateLimitRule): boolean {
 
   const w = windows.get(key);
   if (!w || now - w.startedAt >= rule.windowMs) {
+    // Delete-then-set moves a restarted key to the back (see `windows`).
+    windows.delete(key);
+    while (windows.size >= MAX_TRACKED_KEYS) {
+      const oldest = windows.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      windows.delete(oldest);
+    }
     windows.set(key, { startedAt: now, windowMs: rule.windowMs, count: 1 });
     return rule.max >= 1;
   }
   w.count += 1;
   return w.count <= rule.max;
+}
+
+/** Test hook: how many keys the limiter is currently tracking. */
+export function trackedKeyCount(): number {
+  return windows.size;
 }
 
 /** Test hook: forget all windows. */
@@ -103,19 +133,13 @@ export function voteRule(): RateLimitRule {
 }
 
 /**
- * The client IP for rate-limit keying, from the standard forwarding headers
- * (any reverse proxy — Cloudflare Tunnel included — sets `x-forwarded-for`;
- * the first hop is the client). Falls back to a shared bucket when no header
- * is present (direct local hits), which only ever under-counts distinct
- * clients, never lets one client dodge the limit.
+ * The client IP for rate-limit keying — derived by the shared, deployment-
+ * configurable helper in lib/client-ip.ts (`CLIENT_IP_HEADER` /
+ * `TRUSTED_PROXY_HOPS`), never the client-controlled leftmost
+ * `x-forwarded-for` entry. Falls back to one shared `"unknown"` bucket when no
+ * trusted value is present, which only ever under-counts distinct clients,
+ * never lets one client dodge the limit.
  */
 export function clientIpFrom(headers: Headers): string {
-  const xff = headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-  return headers.get("x-real-ip") ?? "unknown";
+  return resolveClientIp(headers) ?? "unknown";
 }

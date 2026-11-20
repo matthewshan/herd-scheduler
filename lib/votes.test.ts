@@ -20,13 +20,34 @@ const { prismaMock, store } = vi.hoisted(() => {
     response: string;
   }
 
+  interface FakePoll {
+    status: string;
+    finalTimeOptionId: string | null;
+  }
+
+  const openPoll = (): FakePoll => ({
+    status: "open",
+    finalTimeOptionId: null,
+  });
+
   const store = {
     participants: [] as FakeParticipant[],
     availabilities: [] as FakeAvailability[],
+    polls: {} as Record<string, FakePoll>,
+    /** Per-poll row locks held by in-flight fake transactions. */
+    locks: new Map<string, Promise<void>>(),
+    /** Raw SQL issued via tx.$queryRaw, for asserting the lock statement. */
+    rawSql: [] as string[],
+    /** Ordered log of tx calls, to assert the lock is taken first. */
+    calls: [] as string[],
     seq: 0,
     reset() {
       this.participants = [];
       this.availabilities = [];
+      this.polls = { poll1: openPoll(), otherPoll: openPoll() };
+      this.locks = new Map();
+      this.rawSql = [];
+      this.calls = [];
       this.seq = 0;
     },
     nextId(prefix: string) {
@@ -178,23 +199,75 @@ const { prismaMock, store } = vi.hoisted(() => {
     return store.participants.filter((p) => p.pollId === where.pollId).length;
   }
 
-  const tx = {
-    participant: {
-      findUnique: participantFindUnique,
-      upsert: participantUpsert,
-      count: participantCount,
-    },
-    availability: {
-      deleteMany: availabilityDeleteMany,
-      upsert: availabilityUpsert,
-    },
-  };
+  // Wrap a fake method so every call is logged in store.calls.
+  function logged<A extends unknown[], R>(
+    name: string,
+    fn: (...args: A) => Promise<R>,
+  ) {
+    return (...args: A) => {
+      store.calls.push(name);
+      return fn(...args);
+    };
+  }
+
+  // Build a per-transaction client. Data is shared (no isolation — the race
+  // tests rely on every transaction seeing the same store), but `$queryRaw`
+  // models Postgres `SELECT … FOR UPDATE`: it blocks while another in-flight
+  // transaction holds the poll's row lock, and the lock is held until that
+  // transaction's callback settles (commit/rollback).
+  function makeTx(held: (() => void)[]) {
+    async function queryRaw(
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ) {
+      store.calls.push("$queryRaw");
+      const sql = strings.join("?");
+      store.rawSql.push(sql);
+      const pollId = values[0] as string;
+      if (/FOR UPDATE/.test(sql)) {
+        while (store.locks.has(pollId)) {
+          await store.locks.get(pollId);
+        }
+        let release!: () => void;
+        store.locks.set(
+          pollId,
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        );
+        held.push(() => {
+          store.locks.delete(pollId);
+          release();
+        });
+      }
+      const poll = store.polls[pollId];
+      return poll ? [{ ...poll }] : [];
+    }
+
+    return {
+      $queryRaw: queryRaw,
+      participant: {
+        findUnique: logged("participant.findUnique", participantFindUnique),
+        upsert: logged("participant.upsert", participantUpsert),
+        count: logged("participant.count", participantCount),
+      },
+      availability: {
+        deleteMany: logged("availability.deleteMany", availabilityDeleteMany),
+        upsert: logged("availability.upsert", availabilityUpsert),
+      },
+    };
+  }
 
   const prismaMock = {
     participant: { findUnique: participantFindUnique },
-    // One shared `tx` — fine because the fake has no isolation; the race test
-    // relies on both transactions seeing the same store.
-    $transaction: async (cb: (t: typeof tx) => unknown) => cb(tx),
+    $transaction: async (cb: (t: ReturnType<typeof makeTx>) => unknown) => {
+      const held: (() => void)[] = [];
+      try {
+        return await cb(makeTx(held));
+      } finally {
+        held.forEach((release) => release());
+      }
+    },
   };
 
   return { prismaMock, store };
@@ -207,6 +280,7 @@ import {
   loadBallot,
   loadGuestRecord,
   ParticipantLimitError,
+  PollUnavailableError,
 } from "@/lib/votes";
 
 const POLL = "poll1";
@@ -494,5 +568,127 @@ describe("saveBallot — participant cap (Phase 10 maxParticipants)", () => {
       ballot: { s1: "yes" },
     });
     expect(guest.isFirstCast).toBe(true);
+  });
+});
+
+// Distinct first-time guests for the concurrency tests.
+function guestN(i: number) {
+  return {
+    guestKey: `racekey${String(i).padStart(14, "0")}`,
+    guestName: `Guest ${i}`,
+  };
+}
+
+describe("saveBallot — poll row lock", () => {
+  it("takes a plain-Postgres FOR UPDATE lock on the Poll row before anything else", async () => {
+    await saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "yes" } });
+
+    expect(store.calls[0]).toBe("$queryRaw");
+    expect(store.rawSql).toHaveLength(1);
+    const sql = store.rawSql[0].replace(/\s+/g, " ");
+    expect(sql).toMatch(/FROM "Poll" WHERE "id" = \? FOR UPDATE/);
+    expect(sql).toContain('"finalTimeOptionId"');
+  });
+
+  it("N concurrent first casts never overshoot the participant cap", async () => {
+    // Pre-fix (count-then-insert with no lock) every racer counted 0 before any
+    // inserted, so all 5 got in past a cap of 2.
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, (_, i) =>
+        saveBallot({
+          pollId: POLL,
+          identity: guestN(i),
+          ballot: { s1: "yes" },
+          maxParticipants: 2,
+        }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    const rejected = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected",
+    );
+    expect(rejected).toHaveLength(3);
+    for (const r of rejected) {
+      expect(r.reason).toBeInstanceOf(ParticipantLimitError);
+    }
+    expect(store.participants).toHaveLength(2);
+  });
+
+  it("releases the lock after a rejected ballot so later voters aren't stuck", async () => {
+    store.polls[POLL].finalTimeOptionId = "s1";
+    await expect(
+      saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "yes" } }),
+    ).rejects.toThrow(PollUnavailableError);
+    expect(store.locks.size).toBe(0);
+  });
+});
+
+describe("saveBallot — open-state re-check under the lock", () => {
+  it("rejects a vote that lands after finalize, writing nothing", async () => {
+    store.polls[POLL].finalTimeOptionId = "s1";
+
+    const err = await saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes" },
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PollUnavailableError);
+    expect((err as PollUnavailableError).reason).toBe("closed");
+    expect(store.participants).toHaveLength(0);
+    expect(store.availabilities).toHaveLength(0);
+  });
+
+  it("rejects a vote on a closed poll, leaving an existing ballot untouched", async () => {
+    const { participantId } = await saveBallot({
+      pollId: POLL,
+      identity: USER,
+      ballot: { s1: "yes" },
+    });
+    store.polls[POLL].status = "closed";
+
+    await expect(
+      saveBallot({ pollId: POLL, identity: USER, ballot: { s1: "no" } }),
+    ).rejects.toThrow(PollUnavailableError);
+    expect(responseFor(participantId, "s1")).toBe("yes");
+  });
+
+  it("reports a poll deleted since the caller's pre-check as missing", async () => {
+    delete store.polls[POLL];
+
+    const err = await saveBallot({
+      pollId: POLL,
+      identity: USER,
+      ballot: { s1: "yes" },
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(PollUnavailableError);
+    expect((err as PollUnavailableError).reason).toBe("missing");
+  });
+
+  it("a finalize that commits while a vote waits on the lock wins", async () => {
+    // Simulate finalize holding the poll row (its UPDATE takes the same lock):
+    // the vote blocks on the lock, then sees the committed finalize and fails.
+    let releaseFinalize!: () => void;
+    store.locks.set(
+      POLL,
+      new Promise<void>((resolve) => {
+        releaseFinalize = resolve;
+      }),
+    );
+
+    const vote = saveBallot({
+      pollId: POLL,
+      identity: GUEST,
+      ballot: { s1: "yes" },
+    });
+    await Promise.resolve(); // let the vote reach the lock and block
+    store.polls[POLL].finalTimeOptionId = "s2";
+    store.locks.delete(POLL);
+    releaseFinalize();
+
+    await expect(vote).rejects.toThrow(PollUnavailableError);
+    expect(store.participants).toHaveLength(0);
   });
 });

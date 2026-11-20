@@ -13,6 +13,7 @@ import {
   loadGuestRecord,
   saveBallot,
   ParticipantLimitError,
+  PollUnavailableError,
   type Ballot,
   type GuestRecord,
 } from "@/lib/votes";
@@ -37,6 +38,32 @@ export type SubmitVoteResult =
 
 const VALID_VALUES = new Set<VoteValue>(["yes", "maybe", "no"]);
 
+const POLL_GONE_ERROR = "This poll no longer exists.";
+const POLL_CLOSED_ERROR = "This poll is closed — voting has ended.";
+
+/**
+ * Runtime shape check for an untrusted `submitVote` payload: `slug` a string,
+ * `guestName`/`guestKey` strings when present (a missing one is handled by the
+ * guest gates below), `votes` a plain object. Per-entry answer values are
+ * validated against `VALID_VALUES` when the ballot is built.
+ */
+function isWellFormedVoteInput(input: unknown): input is SubmitVoteInput {
+  if (!input || typeof input !== "object") {
+    return false;
+  }
+  const { slug, guestName, guestKey, votes } = input as Record<string, unknown>;
+  const optionalString = (v: unknown) =>
+    v === undefined || v === null || typeof v === "string";
+  return (
+    typeof slug === "string" &&
+    optionalString(guestName) &&
+    optionalString(guestKey) &&
+    !!votes &&
+    typeof votes === "object" &&
+    !Array.isArray(votes)
+  );
+}
+
 /**
  * Cast or update a vote for a poll (spec §2, §6, Phase 6). Anyone with the link
  * may vote — as a guest (display name only) or signed in. Re-submitting updates
@@ -58,6 +85,14 @@ export async function submitVote(
     };
   }
 
+  // Server actions are public endpoints: `input` is typed, but the payload is
+  // whatever the client sent. Check every field's runtime type up front so a
+  // crafted payload gets the structured error instead of throwing a 500
+  // (e.g. `.trim()` on a non-string guestName).
+  if (!isWellFormedVoteInput(input)) {
+    return { ok: false, error: "Couldn't read your answers." };
+  }
+
   const poll = await prisma.poll.findUnique({
     where: { slug: input.slug },
     select: {
@@ -67,11 +102,13 @@ export async function submitVote(
       timeOptions: { select: { id: true } },
     },
   });
+  // Fast-path check for a friendly early error; saveBallot re-checks under the
+  // poll row lock (the authoritative gate against a concurrent finalize).
   if (!poll) {
-    return { ok: false, error: "This poll no longer exists." };
+    return { ok: false, error: POLL_GONE_ERROR };
   }
   if (poll.status !== "open" || poll.finalTimeOptionId !== null) {
-    return { ok: false, error: "This poll is closed — voting has ended." };
+    return { ok: false, error: POLL_CLOSED_ERROR };
   }
 
   const user = await getSessionUser();
@@ -100,13 +137,6 @@ export async function submitVote(
       };
     }
     guestKey = input.guestKey;
-  }
-
-  // Harden against a malformed payload: `votes` is typed but arrives from an
-  // untrusted client, so a non-object would make Object.entries below throw
-  // rather than return the structured error the client expects.
-  if (!input.votes || typeof input.votes !== "object") {
-    return { ok: false, error: "Couldn't read your answers." };
   }
 
   // Keep only answers for this poll's own slots, mapped to known values. Stale
@@ -139,6 +169,12 @@ export async function submitVote(
       return {
         ok: false,
         error: `This poll is full — it already has ${err.max} voters.`,
+      };
+    }
+    if (err instanceof PollUnavailableError) {
+      return {
+        ok: false,
+        error: err.reason === "missing" ? POLL_GONE_ERROR : POLL_CLOSED_ERROR,
       };
     }
     throw err;

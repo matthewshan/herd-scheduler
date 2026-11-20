@@ -53,6 +53,8 @@ so running it on every deploy is safe.
 | `APP_TIMEZONE` | no | Default poll display timezone (IANA). |
 | `RATE_LIMIT_CREATE_MAX` / `RATE_LIMIT_CREATE_WINDOW_SECONDS` | no | Poll creation per creator; default 20 per 3600s. |
 | `RATE_LIMIT_VOTE_MAX` / `RATE_LIMIT_VOTE_WINDOW_SECONDS` | no | Vote submits per client IP; default 30 per 60s. |
+| `CLIENT_IP_HEADER` | per deployment | Single-value header a trusted edge sets to the client IP (e.g. `cf-connecting-ip`). When set, it's the *only* IP source. See [Client IP](#client-ip-rate-limit--audit-log). |
+| `TRUSTED_PROXY_HOPS` | no (default `1`) | When `CLIENT_IP_HEADER` is unset: take the Nth `X-Forwarded-For` entry from the right. |
 | `MAX_POLLS_PER_CREATOR` | no (default 100) | Lifetime row cap per creator. |
 | `MAX_SLOTS_PER_POLL` | no (default 60) | Time options per poll. |
 | `MAX_PARTICIPANTS_PER_POLL` | no (default 250) | Distinct voters per poll. |
@@ -60,7 +62,45 @@ so running it on every deploy is safe.
 
 Rate limits are enforced **per replica** (in-process memory, no external
 service — the portability trade-off): N replicas raise the effective ceiling
-N×. Size caps are DB row counts and replica-independent.
+N×. Each replica tracks at most 10,000 limiter keys (oldest evicted first), so
+memory stays bounded under a flood. Size caps are DB row counts and
+replica-independent; the participant cap is exact under concurrency (ballot
+writes serialize on the poll row).
+
+## Client IP (rate limit + audit log)
+
+The per-IP vote limit and the audit log's `ip` column both come from
+`lib/client-ip.ts`. The app never sees the TCP peer — only headers — so it has
+to be told which header value your proxies vouch for:
+
+- `X-Forwarded-For` is **append-only and client-seeded**: each proxy appends
+  the peer it saw to whatever the client sent, and Next.js only fills it in
+  when it's absent. The **leftmost** entry is whatever the client typed, so
+  it's never used. The entries your own proxies appended are counted from the
+  **right** — `TRUSTED_PROXY_HOPS=N` takes the Nth from the right.
+- `CLIENT_IP_HEADER` names a single-value header your edge **overwrites** on
+  every request (Cloudflare's `cf-connecting-ip`, or `x-real-ip` from an nginx
+  that sets it). When set, it's the only source — a missing header (a request
+  that bypassed the edge) lands in a shared bucket instead of falling back to
+  a spoofable one.
+
+**Default (`TRUSTED_PROXY_HOPS=1`, rightmost entry)** is the least-bad
+zero-config choice: the address seen by the proxy closest to the app is
+infrastructure-written, so a client can't rotate its key. If that proxy is
+really an internal hop (e.g. Traefik behind `cloudflared`), the rightmost entry
+is the same internal address for everyone — every voter shares one bucket.
+That fails *closed* (over-throttling, never a bypass); fix it by setting the
+values below. Every ambiguous case (missing header, chain shorter than N,
+non-IP value) also collapses to the shared bucket. With **no proxy at all**
+the client can send its own XFF and no header is trustworthy — always run
+behind one.
+
+| Deployment | Set |
+|---|---|
+| Reference A — Caddy / nginx / Traefik directly in front | Default (`TRUSTED_PROXY_HOPS=1`) when the proxy appends to XFF. Add 1 per extra appending hop (e.g. a cloud LB in front of nginx → `2`). |
+| Reference B — Vercel | Default. Vercel overwrites `X-Forwarded-For` with the real client IP. |
+| Reference C — k3s + Cloudflare Tunnel | `CLIENT_IP_HEADER=cf-connecting-ip`. The tunnel means there's no public origin to bypass Cloudflare through, and it's independent of how Traefik treats XFF. |
+| Local dev (`pnpm dev`, no proxy) | Leave unset — Next.js fills XFF from the socket. |
 
 ## Statelessness
 
@@ -139,7 +179,8 @@ The primary target. All cluster wiring lives in the owner-managed
   succeed before the new app pods roll.
 - **Public HTTPS via Cloudflare Tunnel**: TLS terminates at the edge, the app
   speaks plain HTTP in-cluster. `AUTH_URL` = the public domain,
-  `AUTH_TRUST_HOST=true`.
+  `AUTH_TRUST_HOST=true`, `CLIENT_IP_HEADER=cf-connecting-ip` (so the per-IP
+  vote limit keys on the real client — see [Client IP](#client-ip-rate-limit--audit-log)).
 - **Secrets** (`DATABASE_URL`, `AUTH_SECRET`, Google credentials) come from
   the cluster's secret manager (External Secrets); plain config
   (`AUTH_URL`, `OWNER_EMAIL`, `ALLOWLIST_ENABLED`, …) rides on the

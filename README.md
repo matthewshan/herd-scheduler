@@ -126,6 +126,8 @@ container, pass them as environment.
 | `APP_TIMEZONE` | no | Default poll display timezone, IANA name (e.g. `America/New_York`). |
 | `RATE_LIMIT_CREATE_MAX` / `RATE_LIMIT_CREATE_WINDOW_SECONDS` | no | Poll creation per creator; default 20 per 3600s. |
 | `RATE_LIMIT_VOTE_MAX` / `RATE_LIMIT_VOTE_WINDOW_SECONDS` | no | Vote submits per client IP; default 30 per 60s. |
+| `CLIENT_IP_HEADER` | per deployment | Single-value header your trusted edge sets to the client IP; the only IP source when set. Cloudflare Tunnel: `cf-connecting-ip`. |
+| `TRUSTED_PROXY_HOPS` | no (default `1`) | Otherwise, use the Nth `X-Forwarded-For` entry from the right (never the client-controlled leftmost). See [`docs/deployment.md`](docs/deployment.md#client-ip-rate-limit--audit-log). |
 | `MAX_POLLS_PER_CREATOR` | no (default 100) | Lifetime poll cap per creator. |
 | `MAX_SLOTS_PER_POLL` | no (default 60) | Time options per poll. |
 | `MAX_PARTICIPANTS_PER_POLL` | no (default 250) | Distinct voters per poll. |

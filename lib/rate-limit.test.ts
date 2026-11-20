@@ -4,7 +4,9 @@ import {
   checkRateLimit,
   clientIpFrom,
   createPollRule,
+  MAX_TRACKED_KEYS,
   resetRateLimits,
+  trackedKeyCount,
   voteRule,
 } from "@/lib/rate-limit";
 
@@ -84,16 +86,74 @@ describe("env-tunable rules", () => {
   });
 });
 
-describe("clientIpFrom", () => {
-  it("takes the first hop of x-forwarded-for", () => {
-    const h = new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" });
-    expect(clientIpFrom(h)).toBe("203.0.113.7");
+describe("tracked-key cap (bounded memory)", () => {
+  it("never tracks more than MAX_TRACKED_KEYS, even within one sweep interval", () => {
+    for (let i = 0; i < MAX_TRACKED_KEYS + 500; i++) {
+      checkRateLimit(`vote:spoof-${i}`, RULE);
+    }
+    expect(trackedKeyCount()).toBe(MAX_TRACKED_KEYS);
   });
 
-  it("falls back to x-real-ip, then a shared bucket", () => {
+  it("evicts the oldest window first, keeping recent counters intact", () => {
+    // The oldest key gets evicted when the cap is hit…
+    checkRateLimit("vote:oldest", RULE);
+    vi.advanceTimersByTime(1);
+    // …while a recent, exhausted key keeps its count.
+    for (let i = 0; i < MAX_TRACKED_KEYS - 2; i++) {
+      checkRateLimit(`vote:filler-${i}`, RULE);
+    }
+    for (let i = 0; i < 3; i++) {
+      checkRateLimit("vote:recent", RULE);
+    }
+    expect(trackedKeyCount()).toBe(MAX_TRACKED_KEYS);
+
+    checkRateLimit("vote:newcomer", RULE); // at cap → evicts "vote:oldest"
+    expect(trackedKeyCount()).toBe(MAX_TRACKED_KEYS);
+    expect(checkRateLimit("vote:recent", RULE)).toBe(false);
+    // "oldest" starts a fresh window (it was evicted, not still counted).
+    expect(checkRateLimit("vote:oldest", RULE)).toBe(true);
+  });
+});
+
+describe("clientIpFrom (rate-limit key)", () => {
+  afterEach(() => {
+    delete process.env.CLIENT_IP_HEADER;
+    delete process.env.TRUSTED_PROXY_HOPS;
+  });
+
+  it("keys on the proxy-appended (rightmost) x-forwarded-for entry by default", () => {
+    const h = new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" });
+    expect(clientIpFrom(h)).toBe("10.0.0.1");
+  });
+
+  it("falls back to one shared bucket when there's no trusted value", () => {
+    // x-real-ip is client-settable unless a proxy sets it, so it's only used
+    // when explicitly configured via CLIENT_IP_HEADER.
     expect(clientIpFrom(new Headers({ "x-real-ip": "198.51.100.4" }))).toBe(
-      "198.51.100.4",
+      "unknown",
     );
     expect(clientIpFrom(new Headers())).toBe("unknown");
+  });
+
+  it("a rotating spoofed leftmost entry can't dodge the vote limit (regression)", () => {
+    // The reported bypass: 100/100 requests with `spoof-<i>, 9.9.9.9` passed a
+    // max-3 rule because the key was the client-controlled leftmost entry.
+    let allowed = 0;
+    for (let i = 0; i < 100; i++) {
+      const h = new Headers({ "x-forwarded-for": `spoof-${i}, 9.9.9.9` });
+      if (checkRateLimit(`vote:${clientIpFrom(h)}`, RULE)) {
+        allowed += 1;
+      }
+    }
+    expect(allowed).toBe(RULE.max);
+  });
+
+  it("honors CLIENT_IP_HEADER (e.g. cf-connecting-ip)", () => {
+    process.env.CLIENT_IP_HEADER = "cf-connecting-ip";
+    const h = new Headers({
+      "cf-connecting-ip": "198.51.100.23",
+      "x-forwarded-for": "1.1.1.1, 10.0.0.1",
+    });
+    expect(clientIpFrom(h)).toBe("198.51.100.23");
   });
 });
