@@ -297,9 +297,11 @@ function isUniqueViolation(err: unknown): boolean {
  * stranded under the per-browser `guestKey`. This rebinds it to `userId` so the
  * account carries the votes forward. Returns the account's resulting ballot (so
  * the client can reflect it without a full reload), or `null` when there was
- * nothing to claim. Callers gate this on a fresh guest → sign-in hop (the
- * client's one-shot pending-claim marker) and on the poll still accepting votes
- * (`isPollAcceptingVotes`).
+ * nothing to claim — including when the poll is closed, finalized, or gone:
+ * that's re-checked under the poll row lock (`lockPollForVoting`, shared with
+ * saveBallot), so a concurrent finalize can't slip a claim into settled
+ * results. Callers additionally gate this on a fresh guest → sign-in hop (the
+ * client's one-shot pending-claim marker).
  *
  * Two cases:
  *  - The account has no participation here yet → relabel the guest row in place
@@ -337,6 +339,13 @@ function claimOnce(
   userId: string,
 ): Promise<Ballot | null> {
   return prisma.$transaction(async (tx) => {
+    // Serialize with ballot writes/finalize on this poll and re-check it's still
+    // taking votes: a closed/finalized poll's results are settled — leave them.
+    const poll = await lockPollForVoting(tx, pollId);
+    if (!poll || !isPollAcceptingVotes(poll)) {
+      return null;
+    }
+
     const guest = await tx.participant.findUnique({
       where: { pollId_guestKey: { pollId, guestKey } },
       include: { availabilities: true },

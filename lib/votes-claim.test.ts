@@ -29,13 +29,24 @@ const { prismaMock, store } = vi.hoisted(() => {
     beforeUserLookup: null as null | (() => void),
     /** Test hook: runs at the start of the relabel (may throw, e.g. P2002). */
     beforeRelabel: null as null | (() => void),
+    /** The poll row `lockPollForVoting` sees (null = deleted). */
+    poll: { status: "open", finalTimeOptionId: null } as null | {
+      status: string;
+      finalTimeOptionId: string | null;
+    },
     reset() {
       this.participants = [];
       this.availabilities = [];
       this.beforeUserLookup = null;
       this.beforeRelabel = null;
+      this.poll = { status: "open", finalTimeOptionId: null };
     },
   };
+
+  // lockPollForVoting's `SELECT … FOR UPDATE` (no lock semantics in the fake).
+  async function queryRaw() {
+    return store.poll ? [{ ...store.poll }] : [];
+  }
 
   const matches = (p: FakeParticipant, where: ParticipantWhere) =>
     p.id === where.id &&
@@ -139,6 +150,7 @@ const { prismaMock, store } = vi.hoisted(() => {
   }
 
   const tx = {
+    $queryRaw: queryRaw,
     participant: { findUnique, updateMany, deleteMany },
     availability: { upsert: availabilityUpsert },
   };
@@ -197,6 +209,25 @@ describe("isPollAcceptingVotes", () => {
 describe("claimGuestParticipant", () => {
   it("returns null when the key has no participant here (nothing to claim)", async () => {
     expect(await claimGuestParticipant(POLL, KEY, USER)).toBeNull();
+  });
+
+  it("leaves a closed, finalized, or deleted poll untouched (checked under the lock)", async () => {
+    for (const poll of [
+      { status: "closed", finalTimeOptionId: null },
+      { status: "open", finalTimeOptionId: "s1" },
+      null,
+    ]) {
+      store.reset();
+      store.poll = poll;
+      addParticipant("u1", { userId: USER }, { s1: "no" });
+      addParticipant("g1", { guestKey: KEY }, { s1: "yes" });
+      expect(await claimGuestParticipant(POLL, KEY, USER)).toBeNull();
+      expect(store.participants.map((p) => p.id)).toEqual(["u1", "g1"]);
+      expect(store.availabilities.map((a) => a.response)).toEqual([
+        "no",
+        "yes",
+      ]);
+    }
   });
 
   it("relabels the guest row in place when the account has no row yet", async () => {

@@ -194,6 +194,10 @@ Flow for creating a poll: must be logged in (and `email_verified`, see §7) → 
 
 The Vote screen exposes an **inline "Sign in" link** next to the guest name input. This uses the same Auth.js Google provider as the dedicated Sign-in screen — it's an alternate entry point, not a separate flow. After completing OAuth, the user returns to the same vote page with their votes preserved.
 
+**Guest → account claiming.** A guest who already voted and then signs in has their guest ballots adopted into the account (relabel the guest row when the account has no row on that poll, else merge — guest wins per slot — and drop the guest row). Claiming happens **only right after this browser does the guest → sign-in hop**: starting Google sign-in (the inline link, or the Sign-in screen) while a guest identity is stored sets a one-shot pending-claim marker (`localStorage` `herd-guest-claim`, expires after 1 hour); the next signed-in screen consumes it, claims the poll(s) this browser visited, and then **forgets the guest identity** (`herd-guest-id` / `herd-guest-name`). An ordinary signed-in visit never claims, so on a shared device a later account can't absorb an earlier guest's ballots. **Closed or finalized polls are never claimed into** (checked under the same poll row lock as ballot writes) — their results are settled, and the guest row simply stays a guest vote.
+
+**Vote drafts.** In-progress answers are kept per poll in `localStorage` (`herd-vote:{slug}`) only once the voter actually edits something — server-loaded answers are never copied into a draft, so a stale draft can't shadow a ballot updated on another device. Restored drafts are filtered to the poll's current slots. "Not you? Start fresh" clears the stored guest identity and every `herd-vote:*` draft on the device.
+
 ---
 
 ## 6. Data Model (sketch)
