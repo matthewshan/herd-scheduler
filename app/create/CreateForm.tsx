@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "zustand";
 import { Calendar, Check, Copy, Plus, Users, X } from "lucide-react";
@@ -23,17 +29,19 @@ import { createPoll, type CreatePollSlotInput } from "./actions";
 import { createPollFormStore, type PollFormStore } from "./store";
 
 export interface CreateFormProps {
-  /** Month the calendar opens on (server-computed to avoid hydration drift). */
+  /**
+   * Provisional "today" from the server's clock, so SSR and hydration render the
+   * same calendar. Replaced with the user's local date right after mount.
+   */
   initialYear: number;
   initialMonth: number;
-  /** Today's day-of-month (server-computed); earlier days aren't selectable. */
   initialDay: number;
 }
 
 // The form's transient state lives in a Zustand store (see ./store). We create
 // it once per mount (SSR-safe — not a module-level singleton shared across
-// requests) seeded with the server-computed calendar anchor, and hand it to the
-// single consumer by prop. No context needed while there's one consumer.
+// requests) seeded with the server's provisional calendar anchor, and hand it to
+// the single consumer by prop. No context needed while there's one consumer.
 export function CreateForm({
   initialYear,
   initialMonth,
@@ -63,6 +71,15 @@ function CreateFormView({ store }: CreateFormViewProps) {
 
   const form = useStore(store);
   const { patch, toggleDay, addSelected, removeSlot } = form;
+
+  // Re-anchor the calendar on the *user's* local today. The server's clock is
+  // usually UTC, which runs ahead of US evenings — left alone it would disable
+  // the host's real today (or open on next month). A layout effect so the fix
+  // lands in the hydration commit, before paint or any click. The server still
+  // rejects slots that have already ended in the poll's timezone.
+  useLayoutEffect(() => {
+    store.getState().syncToday(new Date());
+  }, [store]);
 
   const added = useMemo(
     () => new Set(form.slots.map((s) => s.key)),

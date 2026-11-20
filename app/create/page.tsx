@@ -10,8 +10,10 @@ export default async function CreatePage() {
   // non-creators home before any of the form renders.
   await requireCreator();
 
-  // Open the calendar on the current month, computed server-side so the client
-  // form hydrates against a stable value (no new Date() drift).
+  // A *provisional* "today" so SSR and hydration render the same calendar. The
+  // server's clock is typically UTC (the image sets no TZ), so this can be a day
+  // ahead of the host's local date; CreateForm re-anchors on the browser's local
+  // date right after mount (store `syncToday`).
   const now = new Date();
 
   return (
