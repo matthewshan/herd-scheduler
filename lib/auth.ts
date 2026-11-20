@@ -26,21 +26,23 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     email: user.email,
     name: user.name,
     image: user.image,
-    isOwner: user.isOwner,
+    // OWNER_EMAIL is the single source of truth (never the DB mirror).
+    isOwner: isOwnerEmail(user.email),
   };
 }
 
 /**
  * Require an owner. Redirects unauthenticated users to sign-in and non-owners
- * home. Returns the owner user. The owner flag is re-derived from OWNER_EMAIL
- * so it's correct even before the DB flag is bootstrapped.
+ * home. Returns the owner user. Ownership is derived from OWNER_EMAIL only —
+ * the DB `isOwner` flag is an informational mirror, so a former owner loses
+ * access the moment OWNER_EMAIL changes.
  */
 export async function requireOwner(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) {
     redirect("/signin");
   }
-  if (!(user.isOwner || isOwnerEmail(user.email))) {
+  if (!isOwnerEmail(user.email)) {
     redirect("/");
   }
   return user;

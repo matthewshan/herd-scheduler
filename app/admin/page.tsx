@@ -5,6 +5,7 @@ import {
   AUDIT_ACTION_VALUES,
   isAllowlistEnabled,
   isOwnerEmail,
+  parseAuditActionFilter,
 } from "@/lib/access";
 import {
   AppBar,
@@ -42,12 +43,13 @@ function makeAuditFmt(): Intl.DateTimeFormat {
 const fmt = makeAuditFmt();
 
 interface AdminPageProps {
-  searchParams: Promise<{ action?: string }>;
+  searchParams: Promise<{ action?: string | string[] }>;
 }
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   await requireOwner();
-  const { action: actionFilter } = await searchParams;
+  // Repeated (`?action=a&action=b`) or unknown values must never reach Prisma.
+  const actionFilter = parseAuditActionFilter((await searchParams).action);
   const allowlistOn = isAllowlistEnabled();
 
   const [creators, blocked, logs] = await Promise.all([
@@ -152,7 +154,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <section>
           <h2 className="ds-h2 mb-1">Blocked emails</h2>
           <p className="mb-3 font-body text-[13px] text-fg2">
-            Blocked people can&apos;t sign in or create polls, in either mode.
+            Blocked people are signed out right away and can&apos;t sign back in
+            or create polls, in either mode.
           </p>
 
           <form action={blockEmail} className="mb-3 flex flex-col gap-2">

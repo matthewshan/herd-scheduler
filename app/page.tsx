@@ -40,11 +40,14 @@ export default async function Home() {
     return <GuestHome signInScreen={<SignInScreen />} />;
   }
 
-  const isOwner = user.isOwner || isOwnerEmail(user.email);
+  const isOwner = isOwnerEmail(user.email);
   const mayCreate = await canCreatePolls(user.email);
 
+  // Always load the polls you created, even if you can no longer create new
+  // ones (removed from the allowlist, or ALLOWLIST_ENABLED flipped on) — you
+  // still host them, and Joined excludes them, so they'd otherwise vanish.
   const [created, joined] = await Promise.all([
-    mayCreate ? listPollsForCreator(user.id) : Promise.resolve([]),
+    listPollsForCreator(user.id),
     listPollsJoined(user.id),
   ]);
   const ownerName = mayCreate ? "the host" : await ownerFirstName();

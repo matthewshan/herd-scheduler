@@ -80,18 +80,31 @@ export async function blockEmail(formData: FormData): Promise<void> {
   const reason =
     typeof reasonRaw === "string" && reasonRaw.trim() ? reasonRaw.trim() : null;
 
-  await prisma.blockedEmail.upsert({
-    where: { email },
-    create: { email, reason, blockedBy: owner.email },
-    update: { reason },
-  });
+  // Block and sign them out everywhere, atomically. The blocklist is otherwise
+  // only consulted at sign-in, so without deleting their Session rows a blocked
+  // user would stay signed in (voting / claiming) until the session expired.
+  // Match the User email case-insensitively — the adapter stores it as the
+  // provider sent it, while blocklist rows are normalized.
+  const [, revoked] = await prisma.$transaction([
+    prisma.blockedEmail.upsert({
+      where: { email },
+      create: { email, reason, blockedBy: owner.email },
+      update: { reason },
+    }),
+    prisma.session.deleteMany({
+      where: { user: { email: { equals: email, mode: "insensitive" } } },
+    }),
+  ]);
   await logAction({
     action: AUDIT_ACTIONS.emailBlock,
     actorUserId: owner.id,
     actorEmail: owner.email,
     targetType: "email",
     targetId: email,
-    metadata: reason ? { reason } : undefined,
+    metadata: {
+      ...(reason ? { reason } : {}),
+      sessionsRevoked: revoked.count,
+    },
   });
   revalidatePath("/admin");
 }
