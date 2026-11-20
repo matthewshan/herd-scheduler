@@ -20,6 +20,7 @@ vi.mock("@/lib/votes", async () => {
     await vi.importActual<typeof import("@/lib/votes")>("@/lib/votes");
   return {
     ParticipantLimitError: actual.ParticipantLimitError,
+    PollUnavailableError: actual.PollUnavailableError,
     saveBallot: vi.fn(),
     loadGuestRecord: vi.fn(),
   };
@@ -32,7 +33,11 @@ vi.mock("@/lib/access", async () => {
 
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { saveBallot, ParticipantLimitError } from "@/lib/votes";
+import {
+  saveBallot,
+  ParticipantLimitError,
+  PollUnavailableError,
+} from "@/lib/votes";
 import { logAction, AUDIT_ACTIONS } from "@/lib/access";
 import { LIMITS } from "@/lib/limits";
 import { resetRateLimits } from "@/lib/rate-limit";
@@ -320,5 +325,69 @@ describe("submitVote — abuse guards (Phase 10)", () => {
     expect(saveBallotMock).toHaveBeenCalledWith(
       expect.objectContaining({ maxParticipants: 250 }),
     );
+  });
+});
+
+describe("submitVote — finalize race (lock re-check in saveBallot)", () => {
+  it("maps a poll closed/finalized under the lock to the same closed error", async () => {
+    // The pre-check saw an open poll, but a finalize committed before the
+    // ballot's transaction took the poll lock.
+    saveBallotMock.mockRejectedValue(new PollUnavailableError("closed"));
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: "This poll is closed — voting has ended.",
+    });
+    expect(logActionMock).not.toHaveBeenCalled();
+  });
+
+  it("maps a poll deleted mid-submit to the no-longer-exists error", async () => {
+    saveBallotMock.mockRejectedValue(new PollUnavailableError("missing"));
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: "yes" },
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: expect.stringContaining("no longer exists"),
+    });
+  });
+});
+
+describe("submitVote — malformed payloads return a structured error", () => {
+  const base = { slug: "x", guestKey: GUEST_KEY, votes: { s1: "yes" } };
+  const cases: [string, unknown][] = [
+    ["a non-string guestName", { ...base, guestName: 42 }],
+    ["an object guestName", { ...base, guestName: { trim: 1 } }],
+    ["a non-string guestKey", { ...base, guestName: "Sam", guestKey: 7 }],
+    ["a non-string slug", { ...base, guestName: "Sam", slug: ["x"] }],
+    ["an array votes", { ...base, guestName: "Sam", votes: ["yes"] }],
+    ["a string votes", { ...base, guestName: "Sam", votes: "yes" }],
+    ["a null payload", null],
+  ];
+
+  it.each(cases)("rejects %s without throwing", async (_label, payload) => {
+    const res = await submitVote(payload as never);
+    expect(res).toEqual({ ok: false, error: expect.any(String) });
+    expect(pollFindUnique).not.toHaveBeenCalled();
+    expect(saveBallotMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string answer value", async () => {
+    const res = await submitVote({
+      slug: "x",
+      guestName: "Sam",
+      guestKey: GUEST_KEY,
+      votes: { s1: { yes: true } as never },
+    });
+    expect(res.ok).toBe(false);
+    expect(saveBallotMock).not.toHaveBeenCalled();
   });
 });

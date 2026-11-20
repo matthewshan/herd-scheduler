@@ -4,6 +4,7 @@
 
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { resolveClientIp } from "@/lib/client-ip";
 
 /** Lowercased + trimmed, so allowlist/blocklist checks are case-insensitive. */
 export function normalizeEmail(email: string): string {
@@ -144,11 +145,9 @@ export async function logAction(input: LogActionInput): Promise<void> {
   if (ip === null || userAgent === null) {
     try {
       const h = await headers();
-      ip =
-        ip ??
-        h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-        h.get("x-real-ip") ??
-        null;
+      // Same trusted-source derivation as the vote rate limit (never the
+      // client-controlled leftmost x-forwarded-for entry) — lib/client-ip.ts.
+      ip = ip ?? resolveClientIp(h);
       userAgent = userAgent ?? h.get("user-agent") ?? null;
     } catch {
       // Outside a request scope — skip request metadata.

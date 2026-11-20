@@ -77,6 +77,48 @@ export class ParticipantLimitError extends Error {
   }
 }
 
+/** Why a poll can't take a vote: closed/finalized, or deleted mid-submit. */
+export type PollUnavailableReason = "closed" | "missing";
+
+/**
+ * Thrown by saveBallot when, under the poll row lock, the poll is no longer
+ * accepting votes — closed, finalized (`finalTimeOptionId` set; finalizing
+ * ends voting), or deleted since the caller's pre-check. The authoritative
+ * gate: the caller's earlier read can be stale by the time the write lands.
+ */
+export class PollUnavailableError extends Error {
+  constructor(readonly reason: PollUnavailableReason) {
+    super(reason === "missing" ? "Poll no longer exists" : "Poll is not open");
+    this.name = "PollUnavailableError";
+  }
+}
+
+interface LockedPollRow {
+  status: string;
+  finalTimeOptionId: string | null;
+}
+
+/**
+ * Take a row lock on the poll for the rest of the transaction and return its
+ * voting state. Plain Postgres `SELECT … FOR UPDATE` (no provider-specific
+ * features): it serializes every ballot write for one poll — so the
+ * participant-cap count-then-insert can't be raced — and blocks against a
+ * concurrent finalize/close (which UPDATEs the same row), so the open-state
+ * re-check below can't go stale before commit. Other polls are unaffected.
+ * Exported for tests only.
+ */
+export async function lockPollForVoting(
+  tx: Prisma.TransactionClient,
+  pollId: string,
+): Promise<LockedPollRow | null> {
+  const rows = await tx.$queryRaw<LockedPollRow[]>`
+    SELECT "status"::text AS "status", "finalTimeOptionId"
+    FROM "Poll"
+    WHERE "id" = ${pollId}
+    FOR UPDATE`;
+  return rows[0] ?? null;
+}
+
 export interface SaveBallotInput {
   pollId: string;
   identity: ParticipantIdentity;
@@ -85,8 +127,8 @@ export interface SaveBallotInput {
   /**
    * When set, a submit that would create a new participant is rejected with
    * `ParticipantLimitError` once the poll has this many participants. Checked
-   * inside the transaction so concurrent first casts can't meaningfully
-   * overshoot. Unset = uncapped (e.g. the host's own creation-time ballot).
+   * under the poll row lock, so concurrent first casts can't overshoot.
+   * Unset = uncapped (e.g. the host's own creation-time ballot).
    */
   maxParticipants?: number;
 }
@@ -101,7 +143,10 @@ export interface SaveBallotResult {
  * Create or update a voter's availability for a poll. Re-submitting reuses the
  * same Participant (no duplicate rows) and reconciles its Availability set:
  * marked slots are upserted, every other row for the participant is deleted.
- * Runs in one transaction so a ballot is applied all-or-nothing.
+ * Runs in one transaction so a ballot is applied all-or-nothing, holding the
+ * poll's row lock throughout: throws `PollUnavailableError` if the poll is
+ * closed/finalized/deleted by the time the write lands, and
+ * `ParticipantLimitError` at the participant cap.
  *
  * WARNING: an **empty `ballot` deletes ALL of the participant's availability
  * rows** (the deleteMany below has no `notIn` guard when nothing is marked).
@@ -117,15 +162,25 @@ export async function saveBallot({
   maxParticipants,
 }: SaveBallotInput): Promise<SaveBallotResult> {
   return prisma.$transaction(async (tx) => {
+    // Serialize per poll before reading anything (see lockPollForVoting), then
+    // re-check the open state under the lock: the caller's pre-check ran
+    // outside this transaction, so a finalize/close could have landed since.
+    const poll = await lockPollForVoting(tx, pollId);
+    if (!poll) {
+      throw new PollUnavailableError("missing");
+    }
+    if (poll.status !== "open" || poll.finalTimeOptionId !== null) {
+      throw new PollUnavailableError("closed");
+    }
+
     // Pre-read to derive the isFirstCast audit label (vote.cast vs
-    // vote.update) and to gate the participant cap. Best-effort under
-    // concurrent first submits: two racing first casts can both read null and
-    // both report isFirstCast, but the upsert below keeps the data correct
-    // (one participant, no duplicate-key throw) — the audit label is
-    // non-critical vs. that integrity guarantee.
+    // vote.update) and to gate the participant cap. Runs under the poll lock,
+    // so concurrent first submits for this poll see each other's inserts.
     const existing = await findParticipant(tx, pollId, identity);
 
-    // Phase 10 size cap: only a brand-new participant counts against it.
+    // Phase 10 size cap: only a brand-new participant counts against it. Exact
+    // (no overshoot) because the poll lock above serializes concurrent first
+    // casts — each sees the previous one's committed insert.
     if (existing === null && maxParticipants !== undefined) {
       const count = await tx.participant.count({ where: { pollId } });
       if (count >= maxParticipants) {
