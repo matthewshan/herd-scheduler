@@ -33,7 +33,7 @@ The visual identity, voice, and screen-level interactions are fixed by the desig
 - **Guest voting** (display name only) with an **inline Google sign-in** affordance on the same screen — a guest can convert to a logged-in voter without leaving the vote page.
 - **Sticky bottom bar** with `N of M marked` progress + a primary Submit; success state collapses to a "Saved — you can update anytime" toast.
 - **Results view:** per-slot stacked tally bar, Yes/Maybe/No counts, avatar stack of who can make it (when non-anonymous), best-fit highlight (cerulean ring + "★ Best fit" pill), "Works for everyone" pill when no hard-No.
-- **Best-fit scoring formula:** `yes*3 + maybe - no*4`. Top score wins; ties are all highlighted equally. "Works for everyone" is an independent badge that fires whenever `no == 0` on a slot.
+- **Best-fit scoring formula:** `yes*3 + maybe - no*4`. Only slots at least one person can make (≥1 Yes or If-need-be) are eligible for best fit / the creator-home "Leading" line; the top score among eligible slots wins, and ties are all highlighted equally. A slot nobody marked (score 0) or that only has Nos never outranks one with real availability, and when no slot is eligible there's no best fit and no lead (until the host finalizes). "Works for everyone" is an independent badge that fires whenever `no == 0` on a slot.
 - Creator **manually finalizes** the winning slot — highlighting is guidance, never an automatic decision. A finalized banner + per-card marker appears on Results; the host can change the pick.
 - **Light + dark theme** with a toggle on every screen's app bar.
 - Mobile-first responsive UI (390px target; phone-width column on larger viewports).
