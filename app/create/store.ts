@@ -26,9 +26,9 @@ function byChrono(a: DraftSlot, b: DraftSlot): number {
   return startIndex(a.start) - startIndex(b.start);
 }
 
-// Server-computed calendar anchor: the month the calendar opens on and today's
-// day-of-month (earlier days aren't selectable). Passed in to avoid hydration
-// drift between server and client.
+// Calendar anchor: the month the calendar opens on and today's day-of-month
+// (earlier days aren't selectable). Seeded from the server's clock so SSR and
+// hydration agree, then corrected to the user's local date via `syncToday`.
 export interface PollFormInit {
   year: number;
   month: number;
@@ -46,7 +46,7 @@ export interface PollFormFields {
   anonymous: boolean;
 
   // calendar / working range
-  /** Earliest selectable day (fixed at mount); also the calendar's `min`. */
+  /** Earliest selectable day (the user's today); also the calendar's `min`. */
   initial: PollFormInit;
   /** Currently displayed month (calendar nav). */
   year: number;
@@ -73,6 +73,12 @@ export interface PollFormState extends PollFormFields {
   addSelected: () => void;
   /** Drop a committed slot. */
   removeSlot: (key: string) => void;
+  /**
+   * Re-anchor `initial` on `now`'s *local* calendar date (the browser's zone),
+   * replacing the server's provisional value. If the calendar is still showing
+   * the provisional month it follows along; a month the user navigated to stays.
+   */
+  syncToday: (now: Date) => void;
 }
 
 export type PollFormStore = ReturnType<typeof createPollFormStore>;
@@ -145,5 +151,27 @@ export function createPollFormStore(init: PollFormInit) {
 
     removeSlot: (key) =>
       set((s) => ({ slots: s.slots.filter((slot) => slot.key !== key) })),
+
+    syncToday: (now) => {
+      const today: PollFormInit = {
+        year: now.getFullYear(),
+        month: now.getMonth(),
+        day: now.getDate(),
+      };
+      const { initial, year, month } = get();
+      if (
+        today.year === initial.year &&
+        today.month === initial.month &&
+        today.day === initial.day
+      ) {
+        return;
+      }
+      const onProvisionalMonth =
+        year === initial.year && month === initial.month;
+      set({
+        initial: today,
+        ...(onProvisionalMonth ? { year: today.year, month: today.month } : {}),
+      });
+    },
   }));
 }

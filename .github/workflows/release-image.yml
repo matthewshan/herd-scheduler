@@ -1,12 +1,28 @@
-# Publish the image to GitHub Container Registry when a GitHub *release* is
-# published (Phase 12). Complements publish-image.yml (which fires on main pushes
-# and `v*.*.*` tag pushes) — this one keys on the release event and tags the
-# image from the release's git tag (e.g. release on tag v1.2.0 → :1.2.0).
+# Publish the versioned images to GitHub Container Registry when a GitHub
+# *release* is published (Phase 12). This workflow owns every versioned tag;
+# publish-image.yml only handles merges to main (`:latest` + `:sha-…`). Pushing
+# a bare `v*.*.*` git tag without a release no longer publishes anything — a
+# release is the one trigger, so a release that creates its tag can't race a
+# second tag-push build for the same image tags.
 #
-# Tags published per release:
-#   release (tag vX.Y.Z) → ghcr.io/<owner>/herd-scheduler:X.Y.Z (+ :latest)
+# Tags published per release (release on git tag vX.Y.Z):
+#   ghcr.io/<owner>/herd-scheduler:X.Y.Z       (leading `v` stripped, semver)
+#   ghcr.io/<owner>/herd-scheduler:latest      ONLY when this release is the
+#                                              repo's "Latest" release (below)
 # and the migration one-shot as the same tags with a `-migrate` suffix, built
 # from the `migrate` target.
+#
+# When does `:latest` move? `release: published` fires for EVERY published
+# release — prereleases and backports (e.g. v1.1.5 cut after v1.2.0) included —
+# so it can't be assumed to be the newest. We move `:latest` only when the tag
+# is what GitHub's `GET /releases/latest` returns: that endpoint never returns
+# a prerelease or draft and reflects the repo's "Latest" badge (semver/date
+# based, or the owner's explicit "Set as the latest release" choice). Prereleases
+# and older-version backports therefore publish only their `:X.Y.Z` tags.
+# Note: merges to main (publish-image.yml) also move `:latest`.
+#
+# Manual runs (workflow_dispatch) rebuild the images for an existing published
+# release — pass its git tag (e.g. v1.2.0). The same `:latest` rule applies.
 
 name: Release image
 
@@ -14,9 +30,14 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag of an existing published release to (re)publish, e.g. v1.2.0
+        required: true
+        type: string
 
 concurrency:
-  group: release-image-${{ github.ref }}
+  group: release-image-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -30,7 +51,58 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # Resolve which release we're publishing and whether it may move
+      # `:latest`. Event/input values reach the script only through env vars —
+      # never interpolated into the script body.
+      - name: Resolve release tag
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            tag="$RELEASE_TAG"
+          else
+            tag="$INPUT_TAG"
+          fi
+          if [[ ! "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag '$tag' is not a semver tag (vX.Y.Z)."
+            exit 1
+          fi
+
+          # Fails (and stops the job) if no release exists for this tag — a
+          # manual run must name a real release.
+          info=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+            --json isPrerelease,isDraft --jq '"\(.isPrerelease) \(.isDraft)"')
+          read -r is_prerelease is_draft <<< "$info"
+          if [[ "$is_draft" == "true" ]]; then
+            echo "::error::Release $tag is still a draft; publish it first."
+            exit 1
+          fi
+
+          # 404 when the repo has no non-prerelease release yet → not latest.
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" \
+            --jq .tag_name 2>/dev/null || true)
+
+          latest=false
+          if [[ "$is_prerelease" == "false" && "$tag" == "$latest_tag" ]]; then
+            latest=true
+          fi
+          echo "Release $tag: prerelease=$is_prerelease, repo latest=${latest_tag:-<none>} → move :latest=$latest"
+
+          {
+            echo "tag=$tag"
+            echo "latest=$latest"
+          } >> "$GITHUB_OUTPUT"
+
+      # Build from the release's tag, not the dispatching branch.
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -45,15 +117,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # The release's git tag drives the image tag; `match`/strip the leading
-          # `v` so v1.2.0 → :1.2.0 (matching the semver style of publish-image).
-          # `latest=true` is safe — `release: published` only fires for the
-          # newest published release.
+          # `{{version}}` strips the leading `v` (v1.2.0 → :1.2.0), matching the
+          # semver style documented in docs/deployment.md.
           tags: |
-            type=raw,value=${{ github.event.release.tag_name }}
-            type=match,pattern=v?(.*),group=1,value=${{ github.event.release.tag_name }}
+            type=semver,pattern={{version}},value=${{ steps.release.outputs.tag }}
           flavor: |
-            latest=true
+            latest=${{ steps.release.outputs.latest }}
 
       - name: Migrate image metadata
         id: meta-migrate
@@ -61,10 +130,9 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=${{ github.event.release.tag_name }}
-            type=match,pattern=v?(.*),group=1,value=${{ github.event.release.tag_name }}
+            type=semver,pattern={{version}},value=${{ steps.release.outputs.tag }}
           flavor: |
-            latest=true
+            latest=${{ steps.release.outputs.latest }}
             suffix=-migrate
 
       - name: Build and push app image

@@ -3,18 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { formatSlotInZone, tzChipLabel } from "@/lib/time";
 import { loadBallot } from "@/lib/votes";
+import { hostFirstName } from "@/lib/host";
 import { VoteForm } from "./VoteForm";
 
 interface VotePageProps {
   params: Promise<{ slug: string }>;
-}
-
-// First name only — the voice refers to the host by first name (design guide).
-function firstName(name: string | null, email: string): string {
-  if (name?.trim()) {
-    return name.trim().split(/\s+/)[0];
-  }
-  return email.split("@")[0];
 }
 
 // The vote screen (Phase 6): anyone with the link marks availability per slot
@@ -26,7 +19,7 @@ export default async function VotePage({ params }: VotePageProps) {
   const poll = await prisma.poll.findUnique({
     where: { slug },
     include: {
-      createdBy: { select: { name: true, email: true } },
+      createdBy: { select: { name: true } },
       timeOptions: { orderBy: { sortOrder: "asc" } },
     },
   });
@@ -65,7 +58,8 @@ export default async function VotePage({ params }: VotePageProps) {
     <VoteForm
       slug={poll.slug}
       title={poll.title}
-      hostFirstName={firstName(poll.createdBy.name, poll.createdBy.email)}
+      // Neutral fallback when the host has no name — never their email.
+      hostFirstName={hostFirstName(poll.createdBy.name) ?? "Your host"}
       description={poll.description}
       location={poll.location}
       tzLabel={tzChipLabel(poll.timezone)}

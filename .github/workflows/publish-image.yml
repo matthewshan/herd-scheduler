@@ -2,18 +2,21 @@
 # (Phase 10, spec §4 Reference C). The cluster pulls a tagged image from
 # ghcr.io — no in-cluster builds.
 #
-# Tags published per ref:
-#   merge to main → ghcr.io/<owner>/herd-scheduler:latest + :sha-<shortsha>
-#   tag vX.Y.Z    → :X.Y.Z (+ :latest)
+# Tags published per merge to main:
+#   ghcr.io/<owner>/herd-scheduler:latest + :sha-<shortsha>
 # and the migration one-shot as the same tags with a `-migrate` suffix
 # (e.g. :latest-migrate), built from the `migrate` target.
+#
+# Versioned `:X.Y.Z` images are published by release-image.yml when a GitHub
+# release is published — deliberately NOT here. This workflow used to also fire
+# on `v*.*.*` tag pushes, so publishing a release that created its tag ran both
+# workflows racing to push the same `:X.Y.Z`/`:latest` tags.
 
 name: Publish image
 
 on:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
   workflow_dispatch:
 
 concurrency:
@@ -48,7 +51,6 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
             type=sha,prefix=sha-
 
       - name: Migrate image metadata
@@ -58,7 +60,6 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
             type=sha,prefix=sha-
           flavor: |
             suffix=-migrate

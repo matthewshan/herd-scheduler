@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ui";
 import type { PublicPollSummary } from "@/lib/polls";
-import { loadVisits, removeVisit } from "@/lib/guest-history";
+import { loadVisits, removeVisit, slugsToPrune } from "@/lib/guest-history";
 import { loadVisitedPollSummaries } from "./actions";
 import { BrandMark, PollSummaryCard } from "./PollSummaryCard";
 
@@ -22,7 +22,8 @@ export interface GuestHomeProps {
 //
 // Flow: render the cached titles immediately (fast), then fetch live public
 // summaries for the same slugs and upgrade the cards; prune any poll the server
-// no longer has (deleted).
+// no longer has (deleted). A failed fetch keeps the cached cards and prunes
+// nothing.
 export function GuestHome({ signInScreen }: GuestHomeProps) {
   // Cached slugs+titles read from localStorage on mount (newest first).
   const [order, setOrder] = useState<{ slug: string; title: string }[]>([]);
@@ -42,20 +43,33 @@ export function GuestHome({ signInScreen }: GuestHomeProps) {
     }
     const slugs = visits.map((v) => v.slug);
     startTransition(async () => {
-      const rows = await loadVisitedPollSummaries(slugs);
+      // A rejected transition action is rethrown to the error boundary in
+      // React 19, so a network/DB blip would replace the whole landing with
+      // the error page. Swallow it: the cached-title placeholders stay up
+      // (still tappable) and — crucially — nothing is pruned, since a failed
+      // fetch says nothing about whether a poll still exists.
+      let rows: PublicPollSummary[];
+      try {
+        rows = await loadVisitedPollSummaries(slugs);
+      } catch {
+        return;
+      }
       const map: Record<string, PublicPollSummary> = {};
       for (const row of rows) {
         map[row.slug] = row;
       }
       setSummaries(map);
       // Drop polls the server didn't return (deleted) from history + the view.
-      const live = new Set(rows.map((r) => r.slug));
-      for (const slug of slugs) {
-        if (!live.has(slug)) {
-          removeVisit(slug);
-        }
+      const pruned = new Set(
+        slugsToPrune(
+          slugs,
+          rows.map((r) => r.slug),
+        ),
+      );
+      for (const slug of pruned) {
+        removeVisit(slug);
       }
-      setOrder((prev) => prev.filter((p) => live.has(p.slug)));
+      setOrder((prev) => prev.filter((p) => !pruned.has(p.slug)));
     });
   }, []);
 

@@ -26,34 +26,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Fail closed: a missing profile (no OAuth identity) never passes the gate.
       if (profile?.email_verified !== true) return false;
       const email = user.email ?? (profile?.email as string | undefined);
+      // isEmailBlocked exempts the owner, so a stale BlockedEmail row can never
+      // lock OWNER_EMAIL out (email_verified above still applies to the owner).
       if (await isEmailBlocked(email)) return false;
       return true;
     },
-    // Database strategy: `user` is the full DB row (incl. isOwner). Surface id +
-    // isOwner so UI can gate without an extra query (security gates re-check DB).
+    // Surface id + isOwner so UI can gate without an extra query. Owner is
+    // derived from OWNER_EMAIL only — the DB `isOwner` column is a mirror and is
+    // never trusted for authorization (it could be stale after OWNER_EMAIL moves).
     async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
-        session.user.isOwner =
-          (user as { isOwner?: boolean }).isOwner === true ||
-          isOwnerEmail(user.email);
+        session.user.isOwner = isOwnerEmail(user.email);
       }
       return session;
     },
   },
   events: {
-    // Owner bootstrap is order-independent: whenever the OWNER_EMAIL user signs
-    // in, ensure the isOwner flag and an AllowedCreator row exist. Idempotent.
+    // Owner bootstrap is order-independent: whenever someone signs in, re-sync
+    // the informational isOwner mirror to OWNER_EMAIL (true *or* false, so a
+    // former owner's flag is cleared), and ensure the owner has an
+    // AllowedCreator row. Idempotent.
     async signIn({ user }) {
       if (!user.email) return;
       const email = normalizeEmail(user.email);
-      if (isOwnerEmail(email)) {
-        if (user.id) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { isOwner: true },
-          });
-        }
+      const owner = isOwnerEmail(email);
+      if (user.id) {
+        // Only writes when the mirror is out of sync.
+        await prisma.user.updateMany({
+          where: { id: user.id, isOwner: !owner },
+          data: { isOwner: owner },
+        });
+      }
+      if (owner) {
         await prisma.allowedCreator.upsert({
           where: { email },
           create: { email, addedBy: "system:owner-bootstrap" },

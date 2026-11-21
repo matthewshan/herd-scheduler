@@ -19,15 +19,26 @@
  * The `.mts` extension marks this one file as an ES module regardless, so node
  * and `tsx` resolve it as ESM without flipping the whole package over.
  */
-import { chromium, type Page } from "@playwright/test";
+import {
+  chromium,
+  type BrowserContextOptions,
+  type Page,
+} from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = process.env.CAPTURE_BASE_URL ?? "http://localhost:3000";
 const OWNER = process.env.OWNER_EMAIL ?? "matthewshan99@gmail.com";
-// Output GIFs are grouped by phase: docs/screenshots/phase-<n>/.
-const outDir = (phase: number) => `docs/screenshots/phase-${phase}`;
+// Output GIFs are grouped by phase: docs/screenshots/phase-<n>/. Work that isn't
+// a phase (e.g. the Nov 2026 bug-fix pass) passes a name: docs/screenshots/<name>/.
+const outDir = (phase: number | string) =>
+  typeof phase === "number"
+    ? `docs/screenshots/phase-${phase}`
+    : `docs/screenshots/${phase}`;
+// `CAPTURE_SET=bug-fixes` records only the bug-fix-pass scenarios; unset runs
+// the phase scenarios (5–12).
+const CAPTURE_SET = process.env.CAPTURE_SET ?? "phases";
 const TMP_DIR = ".capture-tmp";
 
 // Phone-width viewport so the centered max-w-[390px] screens nearly fill the
@@ -72,13 +83,16 @@ interface Recorded<T> {
 /** Run one scenario in its own recorded context, then emit the GIF. */
 async function record<T>(
   browser: import("@playwright/test").Browser,
-  phase: number,
+  phase: number | string,
   name: string,
   colorScheme: "light" | "dark",
   fn: (page: Page) => Promise<T>,
+  // Extra context options (e.g. `timezoneId`) for scenarios that need them.
+  contextOptions: BrowserContextOptions = {},
 ): Promise<Recorded<T>> {
   const videoDir = join(TMP_DIR, name);
   const context = await browser.newContext({
+    ...contextOptions,
     viewport: VIEWPORT,
     colorScheme,
     // The share screen copies the poll link to the clipboard; grant the
@@ -101,7 +115,7 @@ async function record<T>(
   const dir = outDir(phase);
   mkdirSync(dir, { recursive: true });
   webmToGif(join(videoDir, webm), join(dir, `${name}.gif`));
-  console.log(`✓ phase-${phase}/${name}.gif`);
+  console.log(`✓ ${dir}/${name}.gif`);
   return { result };
 }
 
@@ -226,12 +240,15 @@ async function plain<T>(
   }
 }
 
-/** Cast a guest ballot on a poll (data-seeding; no recording, minimal waits). */
+/**
+ * Cast a guest ballot on a poll (data-seeding; no recording, minimal waits).
+ * A `null` pick leaves that slot unmarked.
+ */
 async function voteAs(
   page: Page,
   slug: string,
   name: string,
-  picks: string[],
+  picks: (string | null)[],
 ): Promise<void> {
   await page.goto(`${BASE}/p/${slug}`, { waitUntil: "networkidle" });
   await page.waitForSelector("text=Which times work for you?");
@@ -239,10 +256,11 @@ async function voteAs(
   const groups = page.getByRole("radiogroup", { name: "Your availability" });
   const count = await groups.count();
   for (let i = 0; i < count; i++) {
-    await groups
-      .nth(i)
-      .getByRole("radio", { name: picks[i % picks.length], exact: true })
-      .click();
+    const pick = picks[i % picks.length];
+    if (pick === null) {
+      continue;
+    }
+    await groups.nth(i).getByRole("radio", { name: pick, exact: true }).click();
   }
   await page.getByRole("button", { name: /Submit availability/ }).click();
   await page.waitForSelector("text=Saved");
@@ -428,13 +446,95 @@ async function driveGuestClaim(page: Page, slug: string): Promise<void> {
   await page.waitForSelector("text=Saved");
   await wait(page, 1400);
 
-  // Now "sign in" (the inline Google affordance → OAuth; here the dev-login
-  // bypass) and return to the same poll. The account adopts the guest ballot:
-  // the answers stay marked and the bar flips to "Update availability".
-  await devLoginAs(page, "dana@example.com", "Dana Lee", `/p/${slug}`);
+  // Now sign in through the inline Google affordance (Google stubbed to the
+  // dev-login bypass) and return to the same poll. The account adopts the guest
+  // ballot: the answers stay marked and the bar flips to "Update availability".
+  // Claiming only fires on this guest → sign-in hop (the inline button sets the
+  // one-shot `herd-guest-claim` marker), so a bare dev-login wouldn't claim.
+  await signInViaGoogle(page, "dana@example.com", "Dana Lee", `/p/${slug}`);
   await page.waitForSelector("text=Which times work for you?");
   await page.waitForSelector("text=Update availability");
   await wait(page, 1900);
+}
+
+/**
+ * Click the vote screen's inline "Sign in" (Google) button, with Google's
+ * authorize page stubbed to redirect into the dev-login bypass. The app's own
+ * code runs exactly as in production up to the OAuth hop — including setting
+ * the pending-claim marker — so this exercises the real guest → sign-in path.
+ */
+async function signInViaGoogle(
+  page: Page,
+  email: string,
+  name: string,
+  to: string,
+): Promise<void> {
+  const devLogin = `${BASE}/api/dev/login?email=${encodeURIComponent(
+    email,
+  )}&name=${encodeURIComponent(name)}&callbackUrl=${encodeURIComponent(to)}`;
+  await page
+    .context()
+    .route("https://accounts.google.com/**", (route) =>
+      route.fulfill({ status: 302, headers: { location: devLogin } }),
+    );
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/api/dev/login")),
+    page.getByRole("button", { name: "Sign in", exact: true }).click(),
+  ]);
+  await page.waitForLoadState("networkidle");
+}
+
+/** Sign out through Auth.js's sign-out page. */
+async function signOut(page: Page): Promise<void> {
+  await page.goto(`${BASE}/api/auth/signout`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /sign out/i }).click();
+  await page.waitForLoadState("networkidle");
+}
+
+/** Owner adds (or removes) an approved creator on /admin (data-seeding). */
+async function setApprovedCreator(
+  page: Page,
+  email: string,
+  approved: boolean,
+): Promise<void> {
+  await devLogin(page, "/admin");
+  await page.waitForSelector("text=Approved creators");
+  // The remove button is the row's unique handle (the audit log below can
+  // mention the same email).
+  const remove = page.getByRole("button", { name: `Remove ${email}` });
+  if (approved) {
+    await page.getByLabel("Email to approve").fill(email);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await remove.waitFor();
+  } else {
+    await remove.click();
+    await remove.waitFor({ state: "detached" });
+  }
+}
+
+/**
+ * As the owner, re-answer an existing ballot on a poll (e.g. the host's
+ * auto-Yes from creation). A pick re-clicks that answer; `"clear"` taps the
+ * currently selected answer to clear the slot.
+ */
+async function editOwnerBallot(
+  page: Page,
+  slug: string,
+  picks: ("Yes" | "If-need-be" | "No" | "clear")[],
+): Promise<void> {
+  await devLogin(page, `/p/${slug}`);
+  await page.waitForSelector("text=Update availability");
+  const groups = page.getByRole("radiogroup", { name: "Your availability" });
+  for (let i = 0; i < picks.length; i++) {
+    const group = groups.nth(i);
+    if (picks[i] === "clear") {
+      await group.locator('[role="radio"][aria-checked="true"]').click();
+    } else {
+      await group.getByRole("radio", { name: picks[i], exact: true }).click();
+    }
+  }
+  await page.getByRole("button", { name: /Update availability/ }).click();
+  await page.waitForSelector("text=Saved");
 }
 
 /** Authenticate as an arbitrary dev-login identity (not just the owner). */
@@ -518,7 +618,13 @@ async function voteAsUser(
 async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
   // Sign in WITH a profile photo and land on the vote screen — the identity row
   // shows the avatar (not the initial fallback).
-  await devLoginAs(page, "jordan@example.com", "Jordan", `/p/${slug}`, AVATAR(5));
+  await devLoginAs(
+    page,
+    "jordan@example.com",
+    "Jordan",
+    `/p/${slug}`,
+    AVATAR(5),
+  );
   await page.waitForSelector("text=Which times work for you?");
   await wait(page, 1200);
 
@@ -565,11 +671,266 @@ async function driveProfileAvatars(page: Page, slug: string): Promise<void> {
   await wait(page, 900);
 }
 
+/**
+ * The Nov 2026 bug-fix pass (branch `bug-fixes`, PRs #17–#23), output to
+ * docs/screenshots/bug-fixes/. Assumes ALLOWLIST_ENABLED=true (the
+ * de-allowlisted-host flow needs the allowlist on) and a server running in UTC
+ * (`TZ=UTC`, like the production container) for the create-calendar flow.
+ */
+async function captureBugFixes(
+  browser: import("@playwright/test").Browser,
+): Promise<void> {
+  const PASS = "bug-fixes";
+
+  // #17 — a 150+ char title no longer drops the poll from the guest home.
+  const longTitle =
+    "Planning the big end-of-year team offsite: dinner, bowling, karaoke, " +
+    "a long walk along the river, and then dessert somewhere that stays open really late 🎳";
+  const longSlug = await plain(browser, (p) =>
+    quickCreate(p, longTitle, ["10", "11"]),
+  );
+  await record(
+    browser,
+    PASS,
+    "guest-home-long-title",
+    "light",
+    async (page) => {
+      await page.goto(`${BASE}/p/${longSlug}`, { waitUntil: "networkidle" });
+      await page.waitForSelector("text=Which times work for you?");
+      await wait(page, 1300);
+      await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+      await page
+        .getByText(/Planning the big end-of-year/)
+        .first()
+        .waitFor();
+      await wait(page, 2600);
+    },
+  );
+
+  // #18 — a host removed from approved creators keeps their polls; only the
+  // New poll button goes, replaced by an "ask {owner}" line.
+  const HOST = "jamie@example.com";
+  await plain(browser, (p) => setApprovedCreator(p, HOST, true));
+  await plain(browser, (p) =>
+    quickCreateAs(p, HOST, "Jamie", "Jamie's climbing session 🧗", ["5", "6"]),
+  );
+  await record(browser, PASS, "deallowlisted-host", "light", async (page) => {
+    await devLoginAs(page, HOST, "Jamie", "/");
+    await page.waitForSelector("text=Your polls");
+    await page.getByRole("button", { name: "New poll" }).waitFor();
+    await wait(page, 1800);
+    // Meanwhile the owner removes Jamie from approved creators on /admin.
+    await plain(browser, (p) => setApprovedCreator(p, HOST, false));
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByText(/Ask Alex to add you/).waitFor();
+    await wait(page, 2800);
+  });
+  await record(browser, PASS, "admin-blocklist-copy", "light", async (page) => {
+    await devLogin(page, "/admin");
+    await page.waitForSelector("text=Blocked emails");
+    await page.getByText(/signed out right away/).scrollIntoViewIfNeeded();
+    await wait(page, 2600);
+  });
+
+  // #20 — best fit only for slots ≥1 person can make. Slot 1: Alice Yes, Bob
+  // No, host No (score −5). Slot 2: nobody marked it (score 0) — it used to win.
+  const bestSlug = await plain(browser, (p) =>
+    quickCreate(p, "Board game brunch", ["13", "14"]),
+  );
+  await plain(browser, (p) => editOwnerBallot(p, bestSlug, ["No", "clear"]));
+  await plain(browser, (p) => voteAs(p, bestSlug, "Alice", ["Yes", null]));
+  await plain(browser, (p) => voteAs(p, bestSlug, "Bob", ["No", null]));
+  await record(browser, PASS, "best-fit-eligible", "light", async (page) => {
+    await page.goto(`${BASE}/p/${bestSlug}/results`, {
+      waitUntil: "networkidle",
+    });
+    await page.waitForSelector("text=Sorted by best fit");
+    await wait(page, 1800);
+    await page.mouse.wheel(0, 260);
+    await wait(page, 1600);
+    await page.mouse.wheel(0, -260);
+    await wait(page, 800);
+  });
+
+  // #20 — results for a host with no name: no "Hosted by" line (and never the
+  // host's email).
+  const NAMELESS = "nameless-host@example.com";
+  await plain(browser, (p) => setApprovedCreator(p, NAMELESS, true));
+  const namelessSlug = await plain(browser, (p) =>
+    quickCreateAs(p, NAMELESS, "", "Pottery class", ["7", "8"]),
+  );
+  await record(browser, PASS, "results-no-host-name", "light", async (page) => {
+    await page.goto(`${BASE}/p/${namelessSlug}/results`, {
+      waitUntil: "networkidle",
+    });
+    await page.waitForSelector("text=Sorted by best fit");
+    await wait(page, 2600);
+  });
+
+  // #20 — creator home card for a poll where nobody can make any slot. Created
+  // last so it tops Alex's list.
+  const allNoSlug = await plain(browser, (p) =>
+    quickCreate(p, "Sunrise hike 🌄", ["20", "21"]),
+  );
+  await plain(browser, (p) => editOwnerBallot(p, allNoSlug, ["No", "No"]));
+  await plain(browser, (p) => voteAs(p, allNoSlug, "Riley", ["No", "No"]));
+  await record(browser, PASS, "home-no-time-works", "light", async (page) => {
+    await devLogin(page, "/");
+    await page.waitForSelector("text=No time works for anyone yet");
+    await wait(page, 2800);
+  });
+
+  // #21 — claiming happens only on a fresh guest → sign-in hop, and the guest
+  // identity is forgotten afterwards; signing out and back in claims nothing.
+  const claimSlug = await plain(browser, (p) =>
+    quickCreate(p, "Casey's book swap 📚", ["15", "16"]),
+  );
+  await record(browser, PASS, "claim-on-sign-in", "light", async (page) => {
+    await page.goto(`${BASE}/p/${claimSlug}`, { waitUntil: "networkidle" });
+    await page.waitForSelector("text=Which times work for you?");
+    await wait(page, 600);
+    await page.getByLabel("Your name").pressSequentially("Casey", {
+      delay: 70,
+    });
+    const groups = page.getByRole("radiogroup", { name: "Your availability" });
+    for (const [i, pick] of ["Yes", "If-need-be"].entries()) {
+      await groups
+        .nth(i)
+        .getByRole("radio", { name: pick, exact: true })
+        .click();
+      await wait(page, 350);
+    }
+    await page.getByRole("button", { name: /Submit availability/ }).click();
+    await page.waitForSelector("text=Saved");
+    await wait(page, 1200);
+    // Inline Sign in → back on the poll, signed in, ballot claimed.
+    await signInViaGoogle(
+      page,
+      "casey@example.com",
+      "Casey",
+      `/p/${claimSlug}`,
+    );
+    await page.waitForSelector("text=Update availability");
+    await wait(page, 2000);
+    // Sign out: the guest identity was forgotten, so the device is clean.
+    await signOut(page);
+    await page.goto(`${BASE}/p/${claimSlug}`, { waitUntil: "networkidle" });
+    await page.waitForSelector("text=Which times work for you?");
+    await wait(page, 1800);
+    // Sign back in and open the results: Casey is one responder, not two.
+    await devLoginAs(
+      page,
+      "casey@example.com",
+      "Casey",
+      `/p/${claimSlug}/results`,
+    );
+    await page.waitForSelector("text=Sorted by best fit");
+    await wait(page, 2600);
+  });
+
+  await record(browser, PASS, "start-fresh", "light", async (page) => {
+    await page.goto(`${BASE}/p/${claimSlug}`, { waitUntil: "networkidle" });
+    await page.waitForSelector("text=Which times work for you?");
+    await page.getByLabel("Your name").fill("Morgan");
+    const groups = page.getByRole("radiogroup", { name: "Your availability" });
+    await groups.nth(0).getByRole("radio", { name: "No", exact: true }).click();
+    await groups
+      .nth(1)
+      .getByRole("radio", { name: "Yes", exact: true })
+      .click();
+    await page.getByRole("button", { name: /Submit availability/ }).click();
+    await page.waitForSelector("text=Saved");
+    await wait(page, 900);
+    // Come back on the same device → recognized; "Start fresh" clears it all.
+    await page.goto(`${BASE}/p/${claimSlug}`, { waitUntil: "networkidle" });
+    await page.waitForSelector("text=Not you? Start fresh");
+    await wait(page, 1800);
+    await page.getByRole("button", { name: "Not you? Start fresh" }).click();
+    await wait(page, 2400);
+  });
+
+  // #22 — the create calendar's "today" is the browser's local date. The
+  // browser is in Los Angeles at 8 PM on the day before the server's (UTC)
+  // date, so the server's provisional today is a day ahead; the calendar
+  // re-anchors to the local date and that day stays selectable.
+  const utcMidnight = new Date();
+  utcMidnight.setUTCHours(0, 0, 0, 0);
+  const laEvening = new Date(utcMidnight.getTime() + 4 * 60 * 60 * 1000);
+  await record(
+    browser,
+    PASS,
+    "create-local-today",
+    "light",
+    async (page) => {
+      await page.clock.install({ time: laEvening });
+      await devLogin(page, "/create");
+      await page.waitForSelector("#poll-title");
+      await wait(page, 1200);
+      const localDay = String(
+        Number(
+          new Intl.DateTimeFormat("en-US", {
+            day: "numeric",
+            timeZone: "America/Los_Angeles",
+          }).format(laEvening),
+        ),
+      );
+      const today = page.getByRole("button", { name: localDay, exact: true });
+      await today.scrollIntoViewIfNeeded();
+      await wait(page, 900);
+      await today.click();
+      await page.getByRole("button", { name: /^Add 1 day at/ }).waitFor();
+      await wait(page, 2200);
+    },
+    { timezoneId: "America/Los_Angeles" },
+  );
+
+  // #23 — dark mode sets color-scheme, so native controls (the timezone
+  // <select>, scrollbars) render dark too.
+  await record(browser, PASS, "create-dark-select", "dark", async (page) => {
+    await devLogin(page, "/create");
+    await page.waitForSelector("#poll-tz");
+    await page.locator("#poll-tz").scrollIntoViewIfNeeded();
+    await wait(page, 900);
+    await page.locator("#poll-tz").focus();
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("ArrowDown");
+      await wait(page, 650);
+    }
+    await page.mouse.wheel(0, 300);
+    await wait(page, 1400);
+  });
+
+  // #23 — rapid share taps keep "Link copied" for the full duration after the
+  // last tap (the earlier timer used to cut it short).
+  await record(browser, PASS, "share-rapid-taps", "light", async (page) => {
+    await page.goto(`${BASE}/p/${claimSlug}`, { waitUntil: "networkidle" });
+    await wait(page, 900);
+    const share = page.getByRole("button", {
+      name: /Share or copy link|Link copied/,
+    });
+    for (let i = 0; i < 3; i++) {
+      await share.click();
+      await wait(page, 700);
+    }
+    await page.waitForSelector("text=Link copied");
+    await wait(page, 2400);
+  });
+}
+
 async function main(): Promise<void> {
   rmSync(TMP_DIR, { recursive: true, force: true });
   mkdirSync(TMP_DIR, { recursive: true });
 
   const browser = await chromium.launch();
+  if (CAPTURE_SET === "bug-fixes") {
+    try {
+      await captureBugFixes(browser);
+    } finally {
+      await browser.close();
+      rmSync(TMP_DIR, { recursive: true, force: true });
+    }
+    return;
+  }
   try {
     // Phase 5 — create + share. Returns the slug the later flows vote on.
     const { result: slug } = await record(
@@ -663,10 +1024,13 @@ async function main(): Promise<void> {
     // Alex's "Joined" tab has a real row. Requires ALLOWLIST_ENABLED=false so a
     // non-owner can create during the capture run.
     const taylorSlug = await plain(browser, (p) =>
-      quickCreateAs(p, "taylor@example.com", "Taylor", "Taylor's game night 🎮", [
-        "20",
-        "21",
-      ]),
+      quickCreateAs(
+        p,
+        "taylor@example.com",
+        "Taylor",
+        "Taylor's game night 🎮",
+        ["20", "21"],
+      ),
     );
     await plain(browser, (p) =>
       voteAsUser(p, OWNER, "Alex", taylorSlug, ["Yes", "If-need-be"]),

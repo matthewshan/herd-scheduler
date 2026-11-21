@@ -3,19 +3,12 @@ import { getSessionUser } from "@/lib/auth";
 import { isOwnerEmail } from "@/lib/access";
 import { getResultsForSlug } from "@/lib/results";
 import { loadBallot } from "@/lib/votes";
+import { hostFirstName } from "@/lib/host";
 import { formatSlotInZone, tzChipLabel } from "@/lib/time";
 import { ResultsView, type ResultSlotView } from "./ResultsView";
 
 interface ResultsPageProps {
   params: Promise<{ slug: string }>;
-}
-
-// First name only — the voice refers to the host by first name (design guide).
-function firstName(name: string | null, email: string): string {
-  if (name?.trim()) {
-    return name.trim().split(/\s+/)[0];
-  }
-  return email.split("@")[0];
 }
 
 // The results screen (Phase 7): best-fit-sorted breakdown that anyone with the
@@ -73,7 +66,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
     <ResultsView
       slug={poll.slug}
       title={poll.title}
-      hostFirstName={firstName(poll.createdBy.name, poll.createdBy.email)}
+      hostFirstName={hostFirstName(poll.createdBy.name)}
       tzLabel={tzChipLabel(poll.timezone)}
       respondedCount={results.respondedCount}
       anonymous={results.anonymous}

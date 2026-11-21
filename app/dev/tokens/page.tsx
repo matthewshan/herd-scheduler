@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { Clock } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -117,6 +118,12 @@ function Section({
 }
 
 export default function TokensPage() {
+  // Dev-only. The /dev layout gates too, but Next renders a layout and its
+  // page in parallel, so a server page must bail itself or its markup still
+  // ships in the prerendered RSC payload of the 404.
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-s-7 p-s-5">
       <header className="flex items-center justify-between gap-s-4">

@@ -19,6 +19,7 @@ import {
   isEmailBlocked,
   isOwnerEmail,
   normalizeEmail,
+  parseAuditActionFilter,
 } from "@/lib/access";
 
 const blockedFindUnique = vi.mocked(prisma.blockedEmail.findUnique);
@@ -94,6 +95,37 @@ describe("isEmailBlocked", () => {
   it("normalizes before lookup", async () => {
     setBlocked(["bad@example.com"]);
     expect(await isEmailBlocked("BAD@Example.com")).toBe(true);
+  });
+
+  it("exempts the owner even when a BlockedEmail row exists", async () => {
+    setBlocked([OWNER]);
+    expect(await isEmailBlocked(OWNER)).toBe(false);
+    expect(await isEmailBlocked("Owner@Example.com")).toBe(false);
+    expect(blockedFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("blocks the former owner once OWNER_EMAIL moves", async () => {
+    setBlocked([OWNER]);
+    process.env.OWNER_EMAIL = "new-owner@example.com";
+    expect(await isEmailBlocked(OWNER)).toBe(true);
+  });
+});
+
+describe("parseAuditActionFilter", () => {
+  it("accepts a known action", () => {
+    expect(parseAuditActionFilter("poll.create")).toBe("poll.create");
+  });
+
+  it("takes the first value of a repeated param", () => {
+    expect(parseAuditActionFilter(["signin", "poll.create"])).toBe("signin");
+  });
+
+  it("returns null for unknown, empty, or missing values", () => {
+    expect(parseAuditActionFilter("drop table")).toBeNull();
+    expect(parseAuditActionFilter("")).toBeNull();
+    expect(parseAuditActionFilter([])).toBeNull();
+    expect(parseAuditActionFilter(["nope", "signin"])).toBeNull();
+    expect(parseAuditActionFilter(undefined)).toBeNull();
   });
 });
 

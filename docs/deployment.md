@@ -9,7 +9,9 @@ reachable through `DATABASE_URL` — nothing host-specific.
 
 CI ([`.github/workflows/publish-image.yml`](../.github/workflows/publish-image.yml))
 builds the `Dockerfile` and pushes **two targets** to GitHub Container
-Registry on every merge to `main` (and on `v*.*.*` tags):
+Registry on every merge to `main`; versioned images come from
+[`release-image.yml`](../.github/workflows/release-image.yml) when a GitHub
+release is published:
 
 | Image | Dockerfile target | Purpose |
 |---|---|---|
@@ -17,8 +19,11 @@ Registry on every merge to `main` (and on `v*.*.*` tags):
 | `ghcr.io/matthewshan/herd-scheduler:latest-migrate` | `migrate` | One-shot `prisma migrate deploy`. Run it to completion against the same `DATABASE_URL` **before** rolling the app. |
 
 Merges also publish immutable `:sha-<shortsha>` / `:sha-<shortsha>-migrate`
-tags; release tags publish `:X.Y.Z` / `:X.Y.Z-migrate`. Pin the sha or semver
-tags in real deployments; `latest` is for convenience.
+tags; published releases publish `:X.Y.Z` / `:X.Y.Z-migrate`, and move
+`:latest` only when the release is the repo's "Latest" release (never for
+prereleases or older-version backports). A bare `v*.*.*` tag push without a
+release publishes nothing. Pin the sha or semver tags in real deployments;
+`latest` is for convenience.
 
 Build locally with `docker build -t herd-scheduler .` (and
 `--target migrate` for the migration image).
@@ -43,16 +48,17 @@ so running it on every deploy is safe.
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | yes | Any Postgres connection string. |
-| `DIRECT_URL` | pooler setups only | Direct (non-pooled) connection for migrations — Reference B. |
 | `AUTH_SECRET` | yes | `openssl rand -base64 32`. |
 | `AUTH_URL` | yes | Public base URL; must match a Google OAuth redirect URI. |
 | `AUTH_TRUST_HOST` | yes off-Vercel | `true` behind any TLS-terminating proxy (Cloudflare Tunnel). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | yes | Redirect URI: `<AUTH_URL>/api/auth/callback/google`. |
 | `OWNER_EMAIL` | yes | Bootstrap owner/admin; seeded on sign-in or `pnpm db:seed`. |
 | `ALLOWLIST_ENABLED` | no (default `true`) | `false` lets any verified Google login create polls. |
-| `APP_TIMEZONE` | no | Default poll display timezone (IANA). |
+| `APP_TIMEZONE` | no (default `America/New_York`) | IANA timezone for `/admin` audit-log timestamps only; polls carry their own timezone. |
 | `RATE_LIMIT_CREATE_MAX` / `RATE_LIMIT_CREATE_WINDOW_SECONDS` | no | Poll creation per creator; default 20 per 3600s. |
 | `RATE_LIMIT_VOTE_MAX` / `RATE_LIMIT_VOTE_WINDOW_SECONDS` | no | Vote submits per client IP; default 30 per 60s. |
+| `CLIENT_IP_HEADER` | per deployment | Single-value header a trusted edge sets to the client IP (e.g. `cf-connecting-ip`). When set, it's the *only* IP source. See [Client IP](#client-ip-rate-limit--audit-log). |
+| `TRUSTED_PROXY_HOPS` | no (default `1`) | When `CLIENT_IP_HEADER` is unset: take the Nth `X-Forwarded-For` entry from the right. |
 | `MAX_POLLS_PER_CREATOR` | no (default 100) | Lifetime row cap per creator. |
 | `MAX_SLOTS_PER_POLL` | no (default 60) | Time options per poll. |
 | `MAX_PARTICIPANTS_PER_POLL` | no (default 250) | Distinct voters per poll. |
@@ -60,7 +66,45 @@ so running it on every deploy is safe.
 
 Rate limits are enforced **per replica** (in-process memory, no external
 service — the portability trade-off): N replicas raise the effective ceiling
-N×. Size caps are DB row counts and replica-independent.
+N×. Each replica tracks at most 10,000 limiter keys (oldest evicted first), so
+memory stays bounded under a flood. Size caps are DB row counts and
+replica-independent; the participant cap is exact under concurrency (ballot
+writes serialize on the poll row).
+
+## Client IP (rate limit + audit log)
+
+The per-IP vote limit and the audit log's `ip` column both come from
+`lib/client-ip.ts`. The app never sees the TCP peer — only headers — so it has
+to be told which header value your proxies vouch for:
+
+- `X-Forwarded-For` is **append-only and client-seeded**: each proxy appends
+  the peer it saw to whatever the client sent, and Next.js only fills it in
+  when it's absent. The **leftmost** entry is whatever the client typed, so
+  it's never used. The entries your own proxies appended are counted from the
+  **right** — `TRUSTED_PROXY_HOPS=N` takes the Nth from the right.
+- `CLIENT_IP_HEADER` names a single-value header your edge **overwrites** on
+  every request (Cloudflare's `cf-connecting-ip`, or `x-real-ip` from an nginx
+  that sets it). When set, it's the only source — a missing header (a request
+  that bypassed the edge) lands in a shared bucket instead of falling back to
+  a spoofable one.
+
+**Default (`TRUSTED_PROXY_HOPS=1`, rightmost entry)** is the least-bad
+zero-config choice: the address seen by the proxy closest to the app is
+infrastructure-written, so a client can't rotate its key. If that proxy is
+really an internal hop (e.g. Traefik behind `cloudflared`), the rightmost entry
+is the same internal address for everyone — every voter shares one bucket.
+That fails *closed* (over-throttling, never a bypass); fix it by setting the
+values below. Every ambiguous case (missing header, chain shorter than N,
+non-IP value) also collapses to the shared bucket. With **no proxy at all**
+the client can send its own XFF and no header is trustworthy — always run
+behind one.
+
+| Deployment | Set |
+|---|---|
+| Reference A — Caddy / nginx / Traefik directly in front | Default (`TRUSTED_PROXY_HOPS=1`) when the proxy appends to XFF. Add 1 per extra appending hop (e.g. a cloud LB in front of nginx → `2`). |
+| Reference B — Vercel | Default. Vercel overwrites `X-Forwarded-For` with the real client IP. |
+| Reference C — k3s + Cloudflare Tunnel | `CLIENT_IP_HEADER=cf-connecting-ip`. The tunnel means there's no public origin to bypass Cloudflare through, and it's independent of how Traefik treats XFF. |
+| Local dev (`pnpm dev`, no proxy) | Leave unset — Next.js fills XFF from the socket. |
 
 ## Statelessness
 
@@ -116,10 +160,11 @@ Serverless opens many short-lived connections, so:
 
 - `DATABASE_URL` = Supabase **pooled** connection — port `6543`,
   `?pgbouncer=true&connection_limit=1`.
-- `DIRECT_URL` = the **direct** connection (port `5432`) — Prisma uses it for
-  migrations only.
 - Run `prisma migrate deploy` as a CI step (the migrate image, or
-  `pnpm migrate:deploy` with both URLs set).
+  `pnpm migrate:deploy`) with **its** `DATABASE_URL` set to the **direct**
+  connection (port `5432`) — a transaction-mode pooler can't run migrations.
+  There is no separate `DIRECT_URL`: the schema deliberately has a single
+  `url`, so single-URL deployments need nothing extra.
 - Register the production domain's redirect URI in Google Cloud Console and
   set `AUTH_URL` to it — preview URLs rotate, so test auth on a stable domain.
 
@@ -133,13 +178,14 @@ The primary target. All cluster wiring lives in the owner-managed
   in-cluster builds.
 - **Postgres on the private LAN**, outside the cluster (a VM — provisioning
   is automated in `k3s-homelab`'s Ansible playbook). Direct connection, so
-  `DIRECT_URL` stays unset.
+  one `DATABASE_URL` serves both the app and the migrate `Job`.
 - **Migrations**: the `-migrate` image as a **sync-wave-gated ArgoCD `Job`**
   (an earlier wave than the `Deployment`, replaced each sync) — it must
   succeed before the new app pods roll.
 - **Public HTTPS via Cloudflare Tunnel**: TLS terminates at the edge, the app
   speaks plain HTTP in-cluster. `AUTH_URL` = the public domain,
-  `AUTH_TRUST_HOST=true`.
+  `AUTH_TRUST_HOST=true`, `CLIENT_IP_HEADER=cf-connecting-ip` (so the per-IP
+  vote limit keys on the real client — see [Client IP](#client-ip-rate-limit--audit-log)).
 - **Secrets** (`DATABASE_URL`, `AUTH_SECRET`, Google credentials) come from
   the cluster's secret manager (External Secrets); plain config
   (`AUTH_URL`, `OWNER_EMAIL`, `ALLOWLIST_ENABLED`, …) rides on the

@@ -116,3 +116,25 @@ a fresh (unauthenticated) context, so the name field and inline Google sign-in a
 both visible — the path most voters take.
 
 ![Vote flow](../screenshots/phase-6/vote-flow.gif)
+
+## Bug-fix pass (Nov 2026)
+
+Work that isn't a phase passes a name instead of a phase number to `record(...)`
+and lands in `docs/screenshots/<name>/`. The bug-fix pass scenarios run on their
+own with:
+
+```bash
+ALLOWLIST_ENABLED=true TZ=UTC ENABLE_DEV_LOGIN=true pnpm dev   # server in UTC, like prod
+CAPTURE_SET=bug-fixes pnpm capture:visual                     # docs/screenshots/bug-fixes/*.gif
+```
+
+Sign-in through the vote screen's inline **Sign in** button is recorded for
+real: the scenario stubs Google's authorize page to redirect into the dev-login
+bypass (`signInViaGoogle`), so the app sets its one-shot claim marker exactly as
+it does in production. A bare dev-login never claims guest ballots.
+
+Native `<select>` popups are drawn outside the page, so Playwright's video can't
+record them; `create-dark-select` shows the dark control cycling through values
+instead.
+
+![Long title stays on the guest home](../screenshots/bug-fixes/guest-home-long-title.gif)

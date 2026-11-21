@@ -4,3 +4,4 @@ prisma/migrations
 pnpm-lock.yaml
 docs
 *.md
+.claude/worktrees
